@@ -5,6 +5,8 @@
   "main": "app.js",
   "scripts": {
     "bundle:editor": "node ./scripts/bundle-editor.js",
+    "nvd:backfill": "node ./scripts/nvdimport.js --backfill",
+    "nvd:update": "node ./scripts/nvdimport.js --update",
     "test": "nodemon app",
     "start": "./scripts/start.sh",
     "stop": "forever stop app.js",
@@ -42,7 +44,8 @@
     "sanitize-filename": "^1.6.3",
     "sanitize-html": "^2.17.1",
     "socket.io": "^4.8.3",
-    "uglify-es": "^3.3.10"
+    "uglify-es": "^3.3.10",
+    "xz-decompress": "^0.2.3"
   },
   "bugs": {
     "url": "https://github.com/Vulnogram/Vulnogram/issues"

@@ -29,6 +29,18 @@ module.exports = {
     serverHost: process.env.VULNOGRAM_HOST || '127.0.0.1',
     serverPort: process.env.VULNOGRAM_PORT || 3555,
     basedir: '/',
+
+    // Automatic NVD sync. The running app refreshes the local copy of the NVD
+    // (the read-only "nvd" section) on a schedule, so no external cron job is
+    // needed. Disable with enabled:false or env NVD_SYNC=false and load manually
+    // instead with:  node scripts/nvdimport.js --backfill
+    nvdSync: {
+        enabled: process.env.NVD_SYNC !== 'false',                  // on by default
+        intervalHours: Number(process.env.NVD_SYNC_INTERVAL_HOURS) || 12,
+        backfillOnEmpty: process.env.NVD_SYNC_BACKFILL !== 'false', // bulk-load all years on first run
+        source: process.env.NVD_SYNC_SOURCE || 'mirror',           // 'mirror' (keyless, 8-day feed) or 'api'
+        apiKey: process.env.NVD_API_KEY || ''                      // optional; raises NVD API rate limits
+    },
     realtime: {
         enabled: process.env.VULNOGRAM_REALTIME !== 'false',
         debounceMs: 350,

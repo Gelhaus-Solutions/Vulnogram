@@ -2,4 +2,4 @@ extends ../../views/list
 
 block append content
     if docs && docs.length == 0
-        h2 Ensure NVD sync script nvdimport.sh is run periodically to refresh the local copy of NVD 
+        h2 No NVD records yet. The app keeps NVD in sync automatically (see conf.nvdSync); for an immediate full load run: node scripts/nvdimport.js --backfill

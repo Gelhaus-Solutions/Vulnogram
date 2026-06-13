@@ -240,6 +240,14 @@ async function bootstrap() {
     server.listen(conf.serverPort, conf.serverHost, function () {
         console.log('Server started at ' + (conf.httpsOptions ? 'https://' : 'http://') + conf.serverHost + ':' + conf.serverPort);
     });
+
+    // Keep the local NVD copy (the read-only "nvd" section) fresh from within
+    // the app, so no external cron job is needed. Controlled by conf.nvdSync.
+    try {
+        require('./lib/nvdsync').start({ conf });
+    } catch (err) {
+        console.error('NVD sync scheduler failed to start:', err.message);
+    }
 }
 
 bootstrap();

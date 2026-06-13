@@ -30,6 +30,16 @@ module.exports = {
     serverPort: process.env.VULNOGRAM_PORT || 3555,
     basedir: '/',
 
+    // Automatic NVD sync — the running app refreshes the local NVD copy (the
+    // read-only "nvd" section) on a schedule, so no external cron is needed.
+    nvdSync: {
+        enabled: process.env.NVD_SYNC !== 'false',                  // on by default; NVD_SYNC=false to disable
+        intervalHours: Number(process.env.NVD_SYNC_INTERVAL_HOURS) || 12,
+        backfillOnEmpty: process.env.NVD_SYNC_BACKFILL !== 'false', // bulk-load all years on first run
+        source: process.env.NVD_SYNC_SOURCE || 'mirror',           // 'mirror' (keyless) or 'api'
+        apiKey: process.env.NVD_API_KEY || ''                      // optional NVD API key
+    },
+
 
     //Uncomment this block to enable HTTPs. Configure paths for valid SSL certificates. 
     // Either get them from your favorite Certificate Authority or generate self signed:

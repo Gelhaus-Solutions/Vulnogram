@@ -92,21 +92,23 @@ var additionalTabs = {
                         }
                     }
                     if (cSet.size > 0) {
-                        var r = await textUtil.getDocuments('nvd', Array.from(cSet), ['cve.CVE_data_meta', 'cve.description', 'impact']);
+                        var r = await textUtil.getDocuments('nvd', Array.from(cSet), ['cve.id', 'cve.descriptions', 'cve.metrics']);
                         for (var c of r) {
-                            var cveid = textUtil.deep_value(c, 'cve.CVE_data_meta.ID');
-                            if (textUtil.deep_value(c, 'impact.baseMetricV3.cvssV3')) {
-                                cMap[cveid].impact = {
-                                    cvss: c.impact.baseMetricV3.cvssV3
-                                };
-                            } else if (textUtil.deep_value(c, 'impact.baseMetricV2.cvssV2')) {
-                                cMap[cveid].impact = {
-                                    cvss: c.impact.baseMetricV2.cvssV2
-                                };
+                            var cveid = textUtil.deep_value(c, 'cve.id');
+                            var v31 = textUtil.deep_value(c, 'cve.metrics.cvssMetricV31.0.cvssData');
+                            var v30 = textUtil.deep_value(c, 'cve.metrics.cvssMetricV30.0.cvssData');
+                            var v2 = textUtil.deep_value(c, 'cve.metrics.cvssMetricV2.0.cvssData');
+                            if (v31) {
+                                cMap[cveid].impact = { cvss: v31 };
+                            } else if (v30) {
+                                cMap[cveid].impact = { cvss: v30 };
+                            } else if (v2) {
+                                cMap[cveid].impact = { cvss: v2 };
                             }
                             if (!cMap[cveid].summary) {
-                                var title = textUtil.deep_value(c, 'cve.CVE_data_meta.TITLE');
-                                cMap[cveid].summary = title ? title : textUtil.deep_value(c, 'cve.description.description_data')[0].value;
+                                var descs = textUtil.deep_value(c, 'cve.descriptions');
+                                var enDesc = Array.isArray(descs) ? (descs.find(function (d) { return d.lang === 'en'; }) || descs[0]) : null;
+                                cMap[cveid].summary = enDesc ? enDesc.value : '';
                             }
                             cSet.delete(cveid);
                         }
