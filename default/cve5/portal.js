@@ -1238,19 +1238,24 @@ async function cveSubmitDocToPortal(doc) {
     var cveState = j.cveMetadata.state == 'REJECTED' ? 'REJECTED' : 'PUBLISHED';
     var cnaContainer = (j.containers && j.containers.cna) ? j.containers.cna : {};
     var latestId = await csClient.getCveId(cveId);
-    var isReserved = latestId && latestId.state == 'RESERVED';
+    var currentState = latestId && latestId.state;
     var ret = null;
-    if (isReserved) {
-        if (cveState == 'REJECTED') {
+    if (cveState == 'REJECTED') {
+        // RESERVED -> REJECTED is a create (POST); rejecting a published record or
+        // updating an already-rejected one is an update (PUT).
+        if (currentState == 'RESERVED') {
             ret = await csClient.createRejectedCve(cveId, { cnaContainer: cnaContainer });
         } else {
-            ret = await csClient.createCve(cveId, { cnaContainer: cnaContainer });
+            ret = await csClient.updateRejectedCve(cveId, { cnaContainer: cnaContainer });
         }
     } else {
-        if (cveState == 'REJECTED') {
-            ret = await csClient.updateRejectedCve(cveId, { cnaContainer: cnaContainer });
-        } else {
+        // Publishing: only an already-PUBLISHED record is updated (PUT). A RESERVED
+        // OR REJECTED record is first published via create (POST) — this is #195:
+        // moving a Rejected record to Published previously hit updateCve and errored.
+        if (currentState == 'PUBLISHED') {
             ret = await csClient.updateCve(cveId, { cnaContainer: cnaContainer });
+        } else {
+            ret = await csClient.createCve(cveId, { cnaContainer: cnaContainer });
         }
     }
     j.cveMetadata.state = cveState;
