@@ -532,9 +532,28 @@ mixin del_versionList(v)
 
 block pageDef
     mixin page(d)
-        style 
-            | .affectedCol {border: 4px solid #fa582d}
-        div.pad
+        //- #186: preview styled to resemble the cve.org/CVERecord page.
+        style.
+            .cverecord { max-width: 1000px; margin: 0 auto; color: #1b1b1b; font-size: 14px; line-height: 1.5; }
+            .cve-head { border-bottom: 3px solid #00457c; padding-bottom: 0.5em; margin-bottom: 1em; }
+            .cve-id-row { display: flex; align-items: center; gap: 0.6em; flex-wrap: wrap; }
+            .cve-id { font-size: 1.7em; margin: 0; color: #00457c; font-weight: 700; }
+            .cve-state { font-size: 0.7em; font-weight: 700; letter-spacing: 0.05em; padding: 0.2em 0.6em; border-radius: 0.25em; text-transform: uppercase; color: #fff; background: #6c757d; }
+            .cve-state.PUBLISHED { background: #2e7d32; }
+            .cve-state.REJECTED { background: #c62828; }
+            .cve-state.RESERVED { background: #6c757d; }
+            .cve-meta { color: #555; font-size: 0.9em; margin-top: 0.35em; }
+            .cve-container { border: 1px solid #d6d6d6; border-radius: 6px; background: #fff; margin: 1em 0; padding: 0.25em 1em 0.75em; }
+            .cve-adp { background: #f6f8fa; }
+            .cve-adp-label { font-weight: 700; color: #00457c; border-bottom: 1px solid #e0e0e0; padding: 0.4em 0; margin-bottom: 0.5em; text-transform: uppercase; font-size: 0.85em; letter-spacing: 0.03em; }
+            .cverecord .desc, .cverecord .problem, .cverecord .impact, .cverecord .metrics, .cverecord .configs, .cverecord .exploits, .cverecord .solution, .cverecord .workaround, .cverecord .credits, .cverecord .timeline, .cverecord .references { padding: 0.7em 0; border-top: 1px solid #ededed; }
+            .cverecord .problem > b:first-child, .cverecord .impact > b:first-child, .cverecord .exploits > b:first-child, .cverecord .solution > b:first-child, .cverecord .workaround > b:first-child, .cverecord .credits > b:first-child, .cverecord .configs > b:first-child, .cverecord .timeline summary b, .cverecord .references summary b { display: block; text-transform: uppercase; letter-spacing: 0.03em; font-size: 0.85em; color: #00457c; margin-bottom: 0.3em; }
+            .cverecord table { border-collapse: collapse; width: 100%; margin: 0.3em 0; }
+            .cverecord th, .cverecord td { border: 1px solid #e0e0e0; padding: 0.4em 0.6em; text-align: left; vertical-align: top; }
+            .cverecord th { background: #f0f4f8; }
+            .cverecord a { color: #00457c; }
+            .affectedCol { border: 4px solid #fa582d; }
+        .cverecord.pad
             -
                 var cve = {}, CDM = {}, allContainers = [];
                 Object.assign(cve, d);
@@ -572,11 +591,30 @@ block pageDef
                         allContainers.push(buildContainer(cve.containers.adp[i], 'adp'));
                     }
                 }
+            - var stateClass = (CDM.state || '').toUpperCase();
+            header.cve-head
+                .cve-id-row
+                    h1.cve-id= CDM.cveId
+                    if CDM.state
+                        span.cve-state(class=stateClass)= CDM.state
+                .cve-meta
+                    if CDM.assignerShortName
+                        span Assigner:
+                            b= CDM.assignerShortName
+                    if CDM.datePublished
+                        |  · Published:
+                        +renderDate(CDM.datePublished)
+                    if CDM.dateUpdated
+                        |  · Updated:
+                        +renderDate(CDM.dateUpdated)
             each con, i in allContainers
                 if con.containerType == 'cna'
-                    +container(con,cve)
+                    section.cve-container
+                        +container(con,cve)
                 else
-                    blockquote.bor.rnd.wht.pad
+                    section.cve-container.cve-adp
+                        .cve-adp-label
+                            = 'ADP: ' + (con.shortName || 'Authorized Data Publisher')
                         +container(con,cve)
 
 mixin mitre(cve)
