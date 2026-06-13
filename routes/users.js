@@ -376,6 +376,77 @@ protected.get('/list/css', function (req, res) {
 
     }
 });
+// ---- CNA login profiles (hybrid): metadata only, the API key is NEVER stored ----
+const CNA_PORTAL_URLS = [
+    'https://cveawg.mitre.org/api',
+    'https://cveawg-test.mitre.org/api',
+    'https://cveawg-adp-test.mitre.org/api',
+    'http://127.0.0.1:3000/api'
+];
+
+// Manage saved CNA logins.
+protected.get('/cna', csrfProtection, function (req, res) {
+    res.render('users/cna', {
+        title: 'CNA logins',
+        profiles: req.user.cnaProfiles || [],
+        portalUrls: CNA_PORTAL_URLS,
+        page: 'users',
+        csrfToken: req.csrfToken()
+    });
+});
+
+// JSON list for the CVE Services login-box picker (no secret to return).
+protected.get('/cna/json', function (req, res) {
+    res.json({
+        profiles: (req.user.cnaProfiles || []).map(function (p) {
+            return { id: p.id, label: p.label, org: p.org, user: p.user, serviceUrl: p.serviceUrl };
+        })
+    });
+});
+
+protected.post('/cna', csrfProtection, async function (req, res) {
+    try {
+        var org = (req.body.org || '').trim().substring(0, 64);
+        var user = (req.body.user || '').trim().substring(0, 128);
+        var label = (req.body.label || '').trim().substring(0, 60);
+        var serviceUrl = (req.body.serviceUrl || '').trim();
+        if (!org || !user) {
+            req.flash('error', 'Org short name and CVE user are required.');
+            return res.redirect('/users/cna');
+        }
+        if (CNA_PORTAL_URLS.indexOf(serviceUrl) < 0) {
+            serviceUrl = CNA_PORTAL_URLS[0];
+        }
+        if (!label) {
+            label = org + ' / ' + user;
+        }
+        var profile = {
+            id: crypto.randomBytes(8).toString('hex'),
+            label: label,
+            org: org,
+            user: user,
+            serviceUrl: serviceUrl
+        };
+        await User.findOneAndUpdate({ username: req.user.username }, { $push: { cnaProfiles: profile } });
+        req.flash('success', 'CNA login "' + label + '" saved.');
+        res.redirect('/users/cna');
+    } catch (err) {
+        req.flash('error', toErrorMessage(err));
+        res.redirect('/users/cna');
+    }
+});
+
+protected.post('/cna/:id/delete', csrfProtection, async function (req, res) {
+    try {
+        await User.findOneAndUpdate({ username: req.user.username }, { $pull: { cnaProfiles: { id: req.params.id } } });
+        req.flash('success', 'CNA login removed.');
+        res.redirect('/users/cna');
+    } catch (err) {
+        req.flash('error', toErrorMessage(err));
+        res.redirect('/users/cna');
+    }
+});
+
 module.exports = {
     public: public,
     protected: protected

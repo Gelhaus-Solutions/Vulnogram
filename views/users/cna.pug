@@ -1,0 +1,52 @@
+//- Saved CNA login profiles (metadata only — the API key is never stored).
+extends ../layout
+
+block append topHeaderLeft
+  a.fbn.vgi-user(href="/users/profile/" + user.username) Profile
+
+block content
+  .pad2
+    h2 CNA logins
+    p.tgrey Saved CVE Services login profiles (org, user, portal). Your API key is never stored — you enter it when logging in to the CVE Portal. Pick a saved login in the portal login box to prefill these fields.
+    table.vtbl.wht
+      thead
+        tr
+          th Label
+          th Org
+          th User
+          th Portal
+          th
+      tbody
+        each p in profiles
+          tr
+            td= p.label
+            td= p.org
+            td= p.user
+            td.sml= p.serviceUrl
+            td
+              form(method="POST", action="/users/cna/" + p.id + "/delete", onsubmit="return confirm('Remove this CNA login?')")
+                input(type="hidden", name="_csrf", value=csrfToken)
+                button.fbn.vgi-del(type="submit") Remove
+        if !profiles || !profiles.length
+          tr
+            td(colspan=5)
+              span.sml.tgrey No saved CNA logins yet.
+    h3.pad Add a login
+    form.pad2(method="POST", action="/users/cna")
+      input(type="hidden", name="_csrf", value=csrfToken)
+      .row
+        label.lbl.vgi-tag Label:
+        input.txt(name="label", type="text", placeholder="e.g. ACME prod")
+      .row
+        label.lbl.vgi-org Org short name:
+        input.txt(name="org", type="text", required=true)
+      .row
+        label.lbl.vgi-user CVE user:
+        input.txt(name="user", type="text", required=true)
+      .row
+        label.lbl.vgi-globe Portal:
+        select.form-control(name="serviceUrl")
+          each u in portalUrls
+            option(value=u)= u
+      .gap
+        button.btn.sfe(type="submit") Save login

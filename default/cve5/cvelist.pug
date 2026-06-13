@@ -9,6 +9,11 @@ mixin cveLoginBox
         div#cpPrompt
             #loginErr=message
             form#cveLoginForm(method='POST', onclick='resetPortalLoginErr();' onkeypress='resetPortalLoginErr();' onchange='resetPortalLoginErr();' onsubmit='portalLogin(event, this); return false;')
+                label.lbl(for="cpProfile") Saved login
+                span.txt-icon-wrap
+                    span.txt-input-icon.vgi-user
+                    select#cpProfile.bor.txt.txt-has-icon(onchange="cnaProfileSelect(this)")
+                        option(value="") — manual entry —
                 label.lbl(for="cpPortal") Portal
                 span.txt-icon-wrap
                     span.txt-input-icon.vgi-globe

@@ -340,6 +340,39 @@ async function initCsClient() {
     }
 }
 
+// Saved CNA login profiles (item 6). Metadata only — the API key is never stored
+// server-side; the user still types it into the login box each session.
+var cnaProfilesCache = [];
+async function cnaLoadProfiles() {
+    var sel = document.getElementById('cpProfile');
+    if (!sel) { return; }
+    try {
+        var res = await fetch('/users/cna/json', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+        if (!res.ok) { return; }
+        var data = await res.json();
+        cnaProfilesCache = data.profiles || [];
+        sel.innerHTML = '<option value="">— manual entry —</option>' + cnaProfilesCache.map(function (p) {
+            return '<option value="' + p.id + '">' + String(p.label || (p.org + '/' + p.user)).replace(/</g, '&lt;') + '</option>';
+        }).join('');
+    } catch (e) { /* ignore */ }
+}
+function cnaProfileSelect(sel) {
+    var p = cnaProfilesCache.find(function (x) { return x.id === sel.value; });
+    if (!p) { return; }
+    var portalEl = document.getElementById('cpPortal');
+    var orgEl = document.getElementById('cpOrg');
+    var userEl = document.getElementById('cpUser');
+    var keyEl = document.getElementById('cpKey');
+    if (orgEl) { orgEl.value = p.org || ''; }
+    if (userEl) { userEl.value = p.user || ''; }
+    if (portalEl && p.serviceUrl) {
+        for (var i = 0; i < portalEl.options.length; i++) {
+            if (portalEl.options[i].value === p.serviceUrl) { portalEl.selectedIndex = i; break; }
+        }
+    }
+    if (keyEl) { keyEl.focus(); }
+}
+
 function showPortalLogin(message) {
     clearPortalSessionCache();
 
@@ -349,6 +382,7 @@ function showPortalLogin(message) {
         prevPortal: csCache.portalType,
         prevOrg: window.localStorage.getItem('shortName')
     })
+    cnaLoadProfiles();
 }
 
 async function portalLogout(message) {
