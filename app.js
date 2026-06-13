@@ -34,6 +34,7 @@ const optSet = require('./models/set');
 const { sanitizeRichHtml } = require('./lib/html-sanitize');
 const mongo = require('./lib/mongo');
 const rbac = require('./lib/rbac');
+const instanceSettings = require('./lib/instance-settings');
 
 if (!process.env.NODE_ENV) {
     process.env.NODE_ENV = "production";
@@ -224,6 +225,11 @@ async function bootstrap() {
         } catch (roleErr) {
             console.error('Failed to load RBAC roles:', roleErr.message);
         }
+        try {
+            await instanceSettings.apply();
+        } catch (settingsErr) {
+            console.error('Failed to apply instance settings:', settingsErr.message);
+        }
     } catch (err) {
         console.error(err.message);
         console.error('Check mongodb connection URL configuration. Ensure Mongodb server is running!');
@@ -233,6 +239,9 @@ async function bootstrap() {
     let users = require('./routes/users');
     app.use('/users', users.public);
     app.use('/users', ensureAuthenticated, users.protected);
+
+    let admin = require('./routes/admin');
+    app.use('/admin', ensureAuthenticated, admin);
 
     let docs = require('./routes/doc');
 
@@ -320,7 +329,7 @@ async function bootstrap() {
     // Keep the local NVD copy (the read-only "nvd" section) fresh from within
     // the app, so no external cron job is needed. Controlled by conf.nvdSync.
     try {
-        require('./lib/nvdsync').start({ conf });
+        require('./lib/nvd-scheduler').start();
     } catch (err) {
         console.error('NVD sync scheduler failed to start:', err.message);
     }

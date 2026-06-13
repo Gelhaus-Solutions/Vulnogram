@@ -1,0 +1,26 @@
+//- Team list with create/edit/delete.
+extends ../layout
+
+block content
+  include adminnav
+  .pad2
+    .flx.gap
+      h2 Teams
+      a.btn.sfe.vgi-magic(href="/admin/teams/new") New team
+    table.vtbl.wht
+      thead
+        tr
+          th Key
+          th Name
+          th
+      tbody
+        each team in teams
+          tr
+            td
+              tt= team.key
+            td
+              a(href="/admin/teams/" + encodeURIComponent(team.key))= team.name
+            td
+              form(method="POST", action="/admin/teams/" + encodeURIComponent(team.key) + "/delete", onsubmit="return confirm('Delete team " + team.key + "?')")
+                input(type="hidden", name="_csrf", value=csrfToken)
+                button.fbn.vgi-del(type="submit") Delete

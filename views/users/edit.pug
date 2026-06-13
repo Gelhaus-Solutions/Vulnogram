@@ -37,27 +37,60 @@ block content
     .row
       label.lbl.vgi-key Confirm Password:
       input.txt(name='password2', type='password', autocomplete="new-password")
-    .row
-      label.lbl.vgi-org Team:
-      if admin
-        input.txt(name='team', type='text', value=(profile.teams && profile.teams[0] ? profile.teams[0].team : ''), placeholder='team-key (optional)')
-      else
+    if admin
+      .row
+        label.lbl.vgi-crown Instance roles:
+        .vflx
+          if instanceRoleDefs && instanceRoleDefs.length
+            each r in instanceRoleDefs
+              label
+                input(type="checkbox", name="instanceRoles", value=r.name, checked=(profile.instanceRoles && profile.instanceRoles.indexOf(r.name) >= 0))
+                = ' ' + r.name
+          else
+            span.sml.tgrey (no instance-scoped roles defined)
+      .row
+        label.lbl.vgi-user Active:
+        input(type="checkbox", name="active", checked=(profile.active !== false))
+      .row
+        label.lbl.vgi-org Team memberships:
+        if teamDefs && teamDefs.length
+          table.vtbl.wht
+            thead
+              tr
+                th Team
+                th Role
+            tbody
+              each t in teamDefs
+                - var current = (profile.teams || []).filter(function(m){return m.team == t.key;})[0]
+                - var currentRole = current && current.roles && current.roles.length ? current.roles[0] : ''
+                tr
+                  td
+                    tt= t.key
+                    |
+                    = t.name
+                  td
+                    select.form-control(name="teamRole[" + t.key + "]")
+                      option(value="", selected=!currentRole) — none —
+                      if teamRoleDefs
+                        each r in teamRoleDefs
+                          option(value=r.name, selected=currentRole == r.name)= r.name
+        else
+          span.sml.tgrey (no teams defined — create one under Admin → Teams)
+    else
+      .row
+        label.lbl.vgi-org Teams:
         tt
-            if profile.teams && profile.teams.length
-                = profile.teams.map(function(t){return t.team + ' (' + (t.roles||[]).join(', ') + ')';}).join('; ')
-            else
-                | (no team)
-    .row
-      label.lbl.vgi-crown Instance role:
-      if admin
-        input(type='checkbox', name='instanceAdmin', checked=(profile.instanceRoles && profile.instanceRoles.indexOf('InstanceAdmin') >= 0))
-        |  Instance Administrator
-      else
+          if profile.teams && profile.teams.length
+            = profile.teams.map(function(t){return t.team + ' (' + (t.roles||[]).join(', ') + ')';}).join('; ')
+          else
+            | (no team)
+      .row
+        label.lbl.vgi-crown Instance role:
         tt
-            if profile.instanceRoles && profile.instanceRoles.indexOf('InstanceAdmin') >= 0
-                | Instance Administrator
-            else
-                | Member
+          if profile.instanceRoles && profile.instanceRoles.length
+            = profile.instanceRoles.join(', ')
+          else
+            | Member
     .gap
         button.btn.sfe(type='submit', value='Save') Save
         if admin && profile.username

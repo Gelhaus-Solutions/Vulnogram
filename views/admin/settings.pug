@@ -1,0 +1,36 @@
+//- Instance settings: overlay over config/conf.js. Empty fields fall back to file defaults.
+extends ../layout
+
+block content
+  include adminnav
+  form.pad2(method="POST", action="/admin/settings")
+    input(type="hidden", name="_csrf", value=csrfToken)
+    h2 Instance settings
+    .row
+      label.lbl.vgi-org Organization name:
+      input.txt(name="orgName", type="text", value=settings.orgName, placeholder=defaults.orgName)
+    .row
+      label.lbl.vgi-org Group name:
+      input.txt(name="groupName", type="text", value=settings.groupName, placeholder=defaults.groupName)
+    .row
+      label.lbl.vgi-mail Contact:
+      input.txt(name="contact", type="text", value=settings.contact, placeholder=defaults.contact)
+    .row
+      label.lbl.vgi-lock Classification (footer banner):
+      input.txt(name="classification", type="text", value=settings.classification, placeholder=defaults.classification)
+    .row
+      label.lbl.vgi-info Copyright (footer line):
+      input.txt(name="copyright", type="text", value=settings.copyright, placeholder=defaults.copyright)
+    .row
+      label.lbl.vgi-data Homepage path:
+      input.txt(name="homepage", type="text", value=settings.homepage, placeholder=defaults.homepage)
+    h3.pad NVD sync
+    .row
+      label.lbl.vgi-data Enable NVD sync:
+      input(type="checkbox", name="nvdEnabled", checked=(conf.nvdSync && conf.nvdSync.enabled))
+    .row
+      label.lbl.vgi-time Interval (hours):
+      input.txt(name="nvdIntervalHours", type="number", min="1", value=(conf.nvdSync ? conf.nvdSync.intervalHours : 12))
+    .gap
+      button.btn.sfe(type="submit") Save settings
+    p.sml.tgrey Empty fields fall back to the values in config/conf.js. Branding applies immediately; NVD schedule changes restart the in-app scheduler.

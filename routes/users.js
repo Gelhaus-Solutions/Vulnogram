@@ -12,6 +12,7 @@ const toErrorMessage = require('../lib/error-message');
 const User = require('../models/user');
 const rbac = require('../lib/rbac');
 const Team = require('../models/team');
+const Role = require('../models/role');
 const conf = require('../config/conf');
 const csurf = require('csurf');
 const {
@@ -36,56 +37,66 @@ function teammateQuery(user) {
     return { username: user.username };
 }
 
+// Role/team definitions an admin assigns from the edit form.
+async function loadAssignmentDefs(admin) {
+    if (!admin) {
+        return { instanceRoleDefs: [], teamRoleDefs: [], teamDefs: [] };
+    }
+    try {
+        return {
+            instanceRoleDefs: await Role.find({ scope: 'instance' }, { sort: { name: 1 } }),
+            teamRoleDefs: await Role.find({ scope: 'team' }, { sort: { name: 1 } }),
+            teamDefs: await Team.find({}, { sort: { key: 1 } })
+        };
+    } catch (e) {
+        return { instanceRoleDefs: [], teamRoleDefs: [], teamDefs: [] };
+    }
+}
+
 // If admin allow edits, otherwise display user
-protected.get(profileRoutes, csrfProtection, function (req, res) {
+protected.get(profileRoutes, csrfProtection, async function (req, res) {
     var admin = rbac.can(req.user, 'user.manage');
+    var defs = await loadAssignmentDefs(admin);
+    function renderEdit(profile, title) {
+        res.render('users/edit', Object.assign({
+            title: title,
+            profile: profile,
+            admin: admin,
+            page: 'users',
+            csrfToken: req.csrfToken()
+        }, defs));
+    }
     if (req.params.id) {
         if (!validator.matches(req.params.id, new RegExp('^' + conf.usernameRegex + '$'))) {
             req.flash('error', 'Invalid user id');
             res.render('blank');
             return;
         }
-        User.findOne({
-            username: req.params.id
-        }, function (err, user) {
-            if (user) {
-                //if Admin or self then present edit form
-                if (admin || req.user.username == req.params.id) {
-                    res.render('users/edit', {
-                        title: 'Update profile: ' + user.username,
-                        profile: user,
-                        admin: admin,
-                        page: 'users',
-                        csrfToken: req.csrfToken()
-                    });
-                } else {
-                    res.render('users/view', {
-                        title: 'Profile: ' + user.username,
-                        profile: user,
-                        admin: admin,
-                        page: 'users',
-                        csrfToken: req.csrfToken()
-                    });
-                }
+        var user = await User.findOne({ username: req.params.id });
+        if (user) {
+            //if Admin or self then present edit form
+            if (admin || req.user.username == req.params.id) {
+                renderEdit(user, 'Update profile: ' + user.username);
             } else {
-                req.flash('error', 'User id not found');
-                if (admin) {
-                    res.redirect('/users/profile');
-                } else {
-                    res.render('blank');
-                }
+                res.render('users/view', {
+                    title: 'Profile: ' + user.username,
+                    profile: user,
+                    admin: admin,
+                    page: 'users',
+                    csrfToken: req.csrfToken()
+                });
             }
-        });
+        } else {
+            req.flash('error', 'User id not found');
+            if (admin) {
+                res.redirect('/users/profile');
+            } else {
+                res.render('blank');
+            }
+        }
     } else {
         if (admin) {
-            //new user form
-            res.render('users/edit', {
-                title: 'Add new user',
-                profile: {},
-                page: 'users',
-                admin: admin,
-                csrfToken: req.csrfToken()
-            });
+            renderEdit({}, 'Add new user');
         } else {
             req.flash('error', 'Only administrators can add new users');
             res.render('blank');
@@ -166,14 +177,15 @@ protected.post(profileRoutes, csrfProtection, [
             for (var e of errors.array()) {
                 req.flash('error', 'Error: ' + e.msg);
             }
+            var defs = await loadAssignmentDefs(admin);
             // todo, clear invalid username or change form action uri
-            res.render('users/edit', {
+            res.render('users/edit', Object.assign({
                 title: 'User ' + req.body.username,
                 profile: req.body,
                 admin: admin,
                 page: 'users',
                 csrfToken: req.csrfToken()
-            });
+            }, defs));
 
             //res.redirect('/users/profile/'+req.user.username);
         } else {
@@ -181,14 +193,43 @@ protected.post(profileRoutes, csrfProtection, [
                 updates.username = req.user.username;
                 updates.instanceRoles = req.user.instanceRoles || [];
                 updates.teams = req.user.teams || [];
+                updates.active = req.user.active !== false;
             } else {
-                updates.instanceRoles = req.body.instanceAdmin ? ['InstanceAdmin'] : [];
-                var teamInput = (req.body.team || '').trim();
-                if (teamInput) {
-                    var teamKey = Team.slugifyTeamKey(teamInput);
-                    if (teamKey) {
-                        await Team.ensureTeam(teamKey, teamInput);
-                        updates.teams = [{ team: teamKey, roles: ['Editor'] }];
+                // Instance roles (checkboxes) — keep only known instance-scoped role names.
+                var instRoleDefs = await Role.find({ scope: 'instance' }, { sort: { name: 1 } });
+                var instRoleNames = instRoleDefs.map(function (r) { return r.name; });
+                var pickedInstance = req.body.instanceRoles;
+                if (typeof pickedInstance === 'string') { pickedInstance = [pickedInstance]; }
+                if (!Array.isArray(pickedInstance)) { pickedInstance = []; }
+                updates.instanceRoles = pickedInstance.filter(function (r) { return instRoleNames.indexOf(r) >= 0; });
+
+                // Per-team role selection posted as teamRole[<teamKey>] = <roleName|''>.
+                var teamRoleMap = (req.body.teamRole && typeof req.body.teamRole === 'object') ? req.body.teamRole : {};
+                var teams = [];
+                Object.keys(teamRoleMap).forEach(function (k) {
+                    var roleName = (teamRoleMap[k] || '').trim();
+                    if (roleName) { teams.push({ team: k, roles: [roleName] }); }
+                });
+                updates.teams = teams;
+                updates.active = (req.body.active === 'on' || req.body.active === 'true');
+
+                // Guard: never remove the last active instance administrator.
+                var adminRoleDefs = await Role.find({ capabilities: rbac.WILDCARD }, { projection: { name: 1 } });
+                var adminRoleNames = adminRoleDefs.map(function (r) { return r.name; });
+                var existingUser = await User.findOne({ username: updates.username });
+                var wasAdmin = existingUser && existingUser.active !== false &&
+                    (existingUser.instanceRoles || []).some(function (r) { return adminRoleNames.indexOf(r) >= 0; });
+                var willBeAdmin = updates.active &&
+                    updates.instanceRoles.some(function (r) { return adminRoleNames.indexOf(r) >= 0; });
+                if (wasAdmin && !willBeAdmin) {
+                    var otherAdmins = await User.find({
+                        username: { $ne: existingUser.username },
+                        active: { $ne: false },
+                        instanceRoles: { $in: adminRoleNames }
+                    }, ['username']);
+                    if (!otherAdmins || otherAdmins.length === 0) {
+                        req.flash('error', 'Cannot remove the last active instance administrator.');
+                        return res.redirect('/users/profile/' + existingUser.username);
                     }
                 }
             }

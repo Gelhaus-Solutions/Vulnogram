@@ -1,0 +1,11 @@
+//- Shared admin sub-navigation. Each link is gated by the relevant capability.
+.flx.gap.pad
+  a.fbn.vgi-data(href="/admin") Admin
+  if can && can('instance.settings')
+    a.fbn.vgi-cog(href="/admin/settings") Settings
+  if can && can('user.manage')
+    a.fbn.vgi-user(href="/users/list") Users
+  if can && can('role.manage')
+    a.fbn.vgi-crown(href="/admin/roles") Roles
+  if can && can('team.manage')
+    a.fbn.vgi-org(href="/admin/teams") Teams

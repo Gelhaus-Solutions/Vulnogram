@@ -1,0 +1,17 @@
+//- Instance administration landing page.
+extends ../layout
+
+block content
+  include adminnav
+  .pad2
+    h2 Instance administration
+    p.tgrey Manage this Vulnogram instance.
+    .vflx.gap
+      if can && can('instance.settings')
+        a.lbl.vgi-cog(href="/admin/settings") Instance settings — branding, contact, classification, NVD sync
+      if can && can('user.manage')
+        a.lbl.vgi-user(href="/users/list") Users — create users, assign roles and teams
+      if can && can('role.manage')
+        a.lbl.vgi-crown(href="/admin/roles") Roles — custom capability bundles
+      if can && can('team.manage')
+        a.lbl.vgi-org(href="/admin/teams") Teams — create and manage teams

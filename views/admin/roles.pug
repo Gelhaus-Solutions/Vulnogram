@@ -1,0 +1,30 @@
+//- Role list with create/edit/delete.
+extends ../layout
+
+block content
+  include adminnav
+  .pad2
+    .flx.gap
+      h2 Roles
+      a.btn.sfe.vgi-magic(href="/admin/roles/new") New role
+    table.vtbl.wht
+      thead
+        tr
+          th Name
+          th Scope
+          th Capabilities
+          th
+      tbody
+        each role in roles
+          tr
+            td
+              a(href="/admin/roles/" + encodeURIComponent(role.name))= role.name
+            td= role.scope
+            td.sml= (role.capabilities || []).join(', ')
+            td
+              if role.builtin
+                span.sml.tgrey built-in
+              else
+                form(method="POST", action="/admin/roles/" + encodeURIComponent(role.name) + "/delete", onsubmit="return confirm('Delete role " + role.name + "?')")
+                  input(type="hidden", name="_csrf", value=csrfToken)
+                  button.fbn.vgi-del(type="submit") Delete

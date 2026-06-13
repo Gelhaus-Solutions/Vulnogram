@@ -83,6 +83,8 @@ html
                           a.lbl.right.vgi-x(onclick="this.closest('details').removeAttribute('open')")
                           a.lbl.vgi-edit.block(href="/users/profile/" + user.username) Update profile
                           a.lbl.vgi-user(href="/users/list") Team list
+                          if can && (can('instance.settings') || can('user.manage') || can('role.manage') || can('team.manage'))
+                            a.lbl.vgi-cog.block(href="/admin") Admin
                           if opts && opts.conf && opts.conf.shortcuts
                             each shortcut in opts.conf.shortcuts
                               - var href=(shortcut.href instanceof Function ? shortcut.href(locals) : shortcut.href)
