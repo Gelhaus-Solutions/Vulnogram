@@ -1675,6 +1675,24 @@ function cveDraftPublishToggleAll(checkAll) {
     });
 }
 
+// #307: clone a draft into a new CVE, pre-filled but without the CVE ID.
+function cveCloneDraft(entry) {
+    if (!entry || !entry.doc) { return; }
+    var clone = cveCloneDoc(entry.doc);
+    if (clone && clone.cveMetadata) {
+        delete clone.cveMetadata.cveId;
+    }
+    var dialog = document.getElementById('draftPublishDialog');
+    if (dialog && dialog.open) { dialog.close(); }
+    if (typeof draftsUi !== 'undefined' && draftsUi && draftsUi.toggle) {
+        draftsUi.toggle.checked = true;
+    }
+    if (typeof loadJSON === 'function') {
+        var edOpts = (typeof getEditorOptionsForDocValue === 'function') ? getEditorOptionsForDocValue(clone) : undefined;
+        loadJSON(clone, undefined, 'Cloned from ' + entry.id + ' — assign a new CVE ID and save', edOpts);
+    }
+}
+
 async function cveRefreshDraftPublishDialog() {
     if (!soloMode) {
         return;
@@ -1843,6 +1861,19 @@ async function cveRefreshDraftPublishDialog() {
             var tdActions = document.createElement('td');
             tdActions.style.textAlign = 'right';
             if (!isRetainedPublished) {
+                var cloneBtn = document.createElement('button');
+                cloneBtn.type = 'button';
+                cloneBtn.className = 'sbn fbn';
+                cloneBtn.innerText = 'Clone';
+                cloneBtn.title = 'Clone ' + entry.id + ' into a new CVE (without the ID)';
+                cloneBtn.setAttribute('aria-label', 'Clone draft ' + entry.id);
+                cloneBtn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    cveCloneDraft(entry);
+                });
+                tdActions.appendChild(cloneBtn);
+                tdActions.appendChild(document.createTextNode(' '));
                 var deleteBtn = document.createElement('button');
                 deleteBtn.type = 'button';
                 deleteBtn.className = 'sbn fbn vgi-del';
