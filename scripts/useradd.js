@@ -3,6 +3,7 @@
 
 const pbkdf2 = require('../lib/pbkdf2.js');
 const User = require('../models/user.js');
+const Team = require('../models/team.js');
 const readline = require('readline');
 const mongo = require('../lib/mongo');
 const config = require('../config/conf');
@@ -42,12 +43,17 @@ const rl = readline.createInterface({
     output: process.stdout
 });
 
+const priv = Number(args[6]);
+const group = args[5];
+const teamKey = group ? Team.slugifyTeamKey(group) : '';
+const teamRole = priv === 0 ? 'TeamAdmin' : (priv === 2 ? 'Viewer' : 'Editor');
 let newUser = {
     name: args[4],
     email: args[3],
     username: (args[2] || '').toLowerCase(),
-    priv: Number(args[6]),
-    group: args[5],
+    instanceRoles: priv === 0 ? ['InstanceAdmin'] : [],
+    teams: teamKey ? [{ team: teamKey, roles: [teamRole] }] : [],
+    active: true,
     emoji: '',
     password: "dummy"
 };
@@ -75,6 +81,9 @@ hidden('Enter Password: ', (password1) => {
         if (password1 && password1 == password2) {
             try {
                 await mongo.connect(config.database);
+                if (teamKey) {
+                    await Team.ensureTeam(teamKey, group);
+                }
                 var hash = await hashPassword(password1);
                 newUser.password = hash;
                 var doc = await User.findOneAndUpdate({

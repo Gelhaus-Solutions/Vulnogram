@@ -16,8 +16,8 @@ block content
                 th Username
                 th Name
                 th Email
-                th CNA/group
-                th Privilege
+                th Teams
+                th Instance role
         tbody
             each user in users
              tr
@@ -29,11 +29,9 @@ block content
                 td
                     a(href="mailto:" + user.email)=user.email
                 td
-                    a(href="mailto:" + user.group)=user.group
+                    = (user.teams && user.teams.length) ? user.teams.map(function(t){return t.team;}).join(', ') : ''
                 td
-                    if user.priv == 0
-                        | Admin
-                    else if user.priv == 1
-                        | Read/Write
-                    else if user.priv == 2
-                        | Read only
+                    if user.instanceRoles && user.instanceRoles.indexOf('InstanceAdmin') >= 0
+                        | Instance Administrator
+                    else
+                        | Member

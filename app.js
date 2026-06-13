@@ -6,11 +6,13 @@ const http = require('http');
 const flash = require('connect-flash');
 const https = require('https');
 const pug = require('pug');
-// TODO: don't use express-session for large-scale production use
 const session = require('express-session');
+// connect-mongo v6 is ESM-first; the CJS build exposes the store as the default export.
+const MongoStore = require('connect-mongo').default;
 
 const passport = require('passport');
 const crypto = require('crypto');
+const fs = require('fs');
 const compress = require('compression');
 
 if (process.cwd() !== __dirname) {
@@ -31,6 +33,7 @@ const conf = require('./config/conf');
 const optSet = require('./models/set');
 const { sanitizeRichHtml } = require('./lib/html-sanitize');
 const mongo = require('./lib/mongo');
+const rbac = require('./lib/rbac');
 
 if (!process.env.NODE_ENV) {
     process.env.NODE_ENV = "production";
@@ -76,13 +79,77 @@ app.use(express.static('public'));
 
 // Express Session middleware
 const useSecureCookie = process.env.VULNOGRAM_SECURE_COOKIE === 'true' || !!conf.httpsOptions;
-if (process.env.VULNOGRAM_SECURE_COOKIE === 'true') {
-    app.set('trust proxy', 1);
+
+// Trust proxy configuration for running behind a reverse proxy / load balancer.
+// Set TRUST_PROXY to one of:
+//   true | false | a hop count (e.g. 1) | an IP/subnet or comma list (e.g. "loopback, 10.0.0.0/8")
+// If unset, the immediate proxy is trusted (1 hop) when secure cookies are enabled.
+function resolveTrustProxy() {
+    var raw = process.env.TRUST_PROXY;
+    if (raw === undefined || raw.trim() === '') {
+        return process.env.VULNOGRAM_SECURE_COOKIE === 'true' ? 1 : undefined;
+    }
+    var trimmed = raw.trim();
+    if (trimmed.toLowerCase() === 'true') {
+        return true;
+    }
+    if (trimmed.toLowerCase() === 'false') {
+        return false;
+    }
+    if (/^\d+$/.test(trimmed)) {
+        return Number(trimmed);
+    }
+    return trimmed;
 }
+const trustProxy = resolveTrustProxy();
+if (trustProxy !== undefined) {
+    app.set('trust proxy', trustProxy);
+}
+// Stable session secret so sessions survive restarts and multiple workers.
+// Prefer SESSION_SECRET from the environment; otherwise persist a generated one.
+function resolveSessionSecret() {
+    if (process.env.SESSION_SECRET) {
+        return process.env.SESSION_SECRET;
+    }
+    const secretPath = path.join(__dirname, 'config', '.session-secret');
+    try {
+        const existing = fs.readFileSync(secretPath, 'utf8').trim();
+        if (existing) {
+            return existing;
+        }
+    } catch (err) {
+        // secret file not created yet
+    }
+    const generated = crypto.randomBytes(64).toString('hex');
+    try {
+        fs.writeFileSync(secretPath, generated, { mode: 0o600 });
+    } catch (err) {
+        console.warn('Could not persist session secret (' + err.message + '); set SESSION_SECRET to keep sessions across restarts.');
+    }
+    return generated;
+}
+
+function sessionDbName(uri) {
+    try {
+        const fromPath = (new URL(uri).pathname || '').replace(/^\//, '');
+        return fromPath || 'vulnogram';
+    } catch (err) {
+        return 'vulnogram';
+    }
+}
+
+// Sessions persist in MongoDB (connect-mongo) instead of memory, so a restart no
+// longer logs everyone out and the app can run multiple processes.
 const sessionMiddleware = session({
-    secret: crypto.randomBytes(64).toString('hex'),
-    resave: true,
+    secret: resolveSessionSecret(),
+    resave: false,
     saveUninitialized: true,
+    store: MongoStore.create({
+        mongoUrl: conf.database,
+        dbName: sessionDbName(conf.database),
+        collectionName: 'sessions',
+        ttl: 14 * 24 * 60 * 60
+    }),
     cookie: {
       httpOnly: true,
       secure: useSecureCookie
@@ -103,6 +170,10 @@ app.use(function (req, res, next) {
     res.locals.user = req.user || null;
     res.locals.startTime = Date.now();
     res.locals.messages = require('express-messages')(req, res);
+    // Capability check available to all templates so the UI can hide disallowed actions.
+    res.locals.can = function (capability, context) {
+        return req.user ? rbac.can(req.user, capability, context) : false;
+    };
     next();
 });
 
@@ -148,6 +219,11 @@ async function bootstrap() {
     try {
         db = await mongo.connect(conf.database);
         console.log('Connected to MongoDB');
+        try {
+            await rbac.loadRoles();
+        } catch (roleErr) {
+            console.error('Failed to load RBAC roles:', roleErr.message);
+        }
     } catch (err) {
         console.error(err.message);
         console.error('Check mongodb connection URL configuration. Ensure Mongodb server is running!');

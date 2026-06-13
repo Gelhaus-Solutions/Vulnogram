@@ -67,9 +67,6 @@ function validateUserDocument(user) {
     if (!user.password || typeof user.password !== 'string') {
         issues.push('Password is required');
     }
-    if (user.priv === undefined || user.priv === null || isNaN(Number(user.priv))) {
-        issues.push('Privilege provided is invalid');
-    }
     if (issues.length) {
         return new Error(issues.join('; '));
     }
@@ -154,12 +151,18 @@ function findOneAndUpdate(query, updates, options, cb) {
         returnDocument: options && options.new ? 'after' : 'before'
     };
     if (nativeOptions.upsert && options && options.setDefaultsOnInsert) {
-        var hasPrivInSet = !!(update.$set && Object.prototype.hasOwnProperty.call(update.$set, 'priv'));
         update.$setOnInsert = Object.assign({}, update.$setOnInsert || {});
-        if (hasPrivInSet) {
-            delete update.$setOnInsert.priv;
-        } else if (update.$setOnInsert.priv === undefined) {
-            update.$setOnInsert.priv = 1;
+        var setHasField = function (field) {
+            return !!(update.$set && Object.prototype.hasOwnProperty.call(update.$set, field));
+        };
+        if (!setHasField('instanceRoles') && update.$setOnInsert.instanceRoles === undefined) {
+            update.$setOnInsert.instanceRoles = [];
+        }
+        if (!setHasField('teams') && update.$setOnInsert.teams === undefined) {
+            update.$setOnInsert.teams = [];
+        }
+        if (!setHasField('active') && update.$setOnInsert.active === undefined) {
+            update.$setOnInsert.active = true;
         }
     }
     var p = collection().findOneAndUpdate(query, update, nativeOptions);

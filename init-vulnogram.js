@@ -1,5 +1,7 @@
 const pbkdf2 = require('./lib/pbkdf2.js');
 const User = require('./models/user.js');
+const Team = require('./models/team.js');
+const rbac = require('./lib/rbac');
 const mongo = require('./lib/mongo');
 const config = require('./config/conf');
 
@@ -18,6 +20,7 @@ function hashPassword(password) {
 async function main() {
     try {
         await mongo.connect(config.database);
+        await rbac.ensureRolesSeeded();
         var username = (process.env.VULNOGRAM_ADMIN_USERNAME || '').toLowerCase();
         var adminUser = await User.findOne({
             username: username
@@ -28,12 +31,18 @@ async function main() {
             process.exit(0);
         }
         var hash = await hashPassword(process.env.VULNOGRAM_ADMIN_PASSWORD);
+        var group = process.env.VULNOGRAM_ADMIN_CNA_EMAIL;
+        var teamKey = group ? Team.slugifyTeamKey(group) : '';
+        if (teamKey) {
+            await Team.ensureTeam(teamKey, group);
+        }
         var newUser = {
             name: process.env.VULNOGRAM_ADMIN_NAME,
             email: process.env.VULNOGRAM_ADMIN_EMAIL,
             username: username,
-            priv: 0,
-            group: process.env.VULNOGRAM_ADMIN_CNA_EMAIL,
+            instanceRoles: ['InstanceAdmin'],
+            teams: teamKey ? [{ team: teamKey, roles: ['TeamAdmin'] }] : [],
+            active: true,
             emoji: process.env.VULNOGRAM_ADMIN_EMOJI || '',
             password: hash
         };

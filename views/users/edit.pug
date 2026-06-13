@@ -38,26 +38,26 @@ block content
       label.lbl.vgi-key Confirm Password:
       input.txt(name='password2', type='password', autocomplete="new-password")
     .row
-      label.lbl.vgi-org CNA or group email:
+      label.lbl.vgi-org Team:
       if admin
-        input.txt(name='group', type='text',value=profile.group)
-      else
-        tt=profile.group
-    .row
-      label.lbl.vgi-crown Privilege:
-      if admin
-        select.form-control(name='priv')
-            //option(value=2,selected=profile.priv==2) Read only
-            option(value=1,selected=profile.priv==1) Read/Write
-            option(value=0,selected=profile.priv==0) Admin
+        input.txt(name='team', type='text', value=(profile.teams && profile.teams[0] ? profile.teams[0].team : ''), placeholder='team-key (optional)')
       else
         tt
-            if profile.priv == 0
-                | Admin
-            else if profile.priv == 1
-                | Read/Write
-            else if profile.priv == 2
-                | Read only
+            if profile.teams && profile.teams.length
+                = profile.teams.map(function(t){return t.team + ' (' + (t.roles||[]).join(', ') + ')';}).join('; ')
+            else
+                | (no team)
+    .row
+      label.lbl.vgi-crown Instance role:
+      if admin
+        input(type='checkbox', name='instanceAdmin', checked=(profile.instanceRoles && profile.instanceRoles.indexOf('InstanceAdmin') >= 0))
+        |  Instance Administrator
+      else
+        tt
+            if profile.instanceRoles && profile.instanceRoles.indexOf('InstanceAdmin') >= 0
+                | Instance Administrator
+            else
+                | Member
     .gap
         button.btn.sfe(type='submit', value='Save') Save
         if admin && profile.username

@@ -10,6 +10,8 @@ const passport = require('passport');
 const pbkdf2 = require('../lib/pbkdf2.js');
 const toErrorMessage = require('../lib/error-message');
 const User = require('../models/user');
+const rbac = require('../lib/rbac');
+const Team = require('../models/team');
 const conf = require('../config/conf');
 const csurf = require('csurf');
 const {
@@ -22,12 +24,21 @@ const validator = require('validator');
 var csrfProtection = csurf();
 const profileRoutes = ['/profile', '/profile/:id'];
 
+// Users who share at least one team with the given user (for the CVE owner picker).
+// Falls back to just the user when they have no team memberships yet.
+function teammateQuery(user) {
+    var teamKeys = Array.isArray(user.teams)
+        ? user.teams.map(function (t) { return t && t.team; }).filter(Boolean)
+        : [];
+    if (teamKeys.length) {
+        return { 'teams.team': { $in: teamKeys } };
+    }
+    return { username: user.username };
+}
+
 // If admin allow edits, otherwise display user
 protected.get(profileRoutes, csrfProtection, function (req, res) {
-    var admin = false;
-    if (req.user.priv == 0) {
-        admin = true;
-    }
+    var admin = rbac.can(req.user, 'user.manage');
     if (req.params.id) {
         if (!validator.matches(req.params.id, new RegExp('^' + conf.usernameRegex + '$'))) {
             req.flash('error', 'Invalid user id');
@@ -117,28 +128,13 @@ protected.post(profileRoutes, csrfProtection, [
         req
     }) => value === req.body.password2)
         .withMessage('Passwords do not match'),
-    check('group')
-        .trim()
-        .normalizeEmail()
-        .custom((value, {
-        req
-    }) => {
-        // validate group only if it is a privileged user
-        // group email from unprivileged users will be ignored
-        if ((req.user.priv != 0) || validator.isEmail(value)) {
-            return true;
-        }
-        return false;
-    })
-        .withMessage('Group email is invalid'),
     check('username')
         .trim()
         .custom((value, {
         req
     }) => {
-        // validate username if it is a privileged user
-        // username from unprivileged users will be ignored
-        if ((req.user.priv != 0) || validator.matches(value, /^[a-zA-Z0-9]{3,128}$/)) {
+        // validate username only for admins; usernames from unprivileged users are ignored
+        if (!rbac.can(req.user, 'user.manage') || validator.matches(value, /^[a-zA-Z0-9]{3,128}$/)) {
             return true;
         }
         req.body.username = "";
@@ -160,24 +156,9 @@ protected.post(profileRoutes, csrfProtection, [
             }
         });
     }),
-    check('priv')
-        .custom((value, {
-        req
-    }) => {
-        // validate username if it is a privileged user
-        // username from unprivileged users will be ignored
-        if ((req.user.priv != 0) || validator.isIn(value, [0, 1, 2])) {
-            return true;
-        }
-        return false;
-    })
-        .withMessage('Privilege provided is invalid')
-], function (req, res) {
+], async function (req, res) {
     if (req.isAuthenticated()) {
-        var admin = false;
-        if (req.user.priv == 0) {
-            admin = true;
-        }
+        var admin = rbac.can(req.user, 'user.manage');
         let errors = validationResult(req);
         let updates = matchedData(req);
 
@@ -198,8 +179,18 @@ protected.post(profileRoutes, csrfProtection, [
         } else {
             if (!admin) {
                 updates.username = req.user.username;
-                updates.priv = req.user.priv;
-                updates.group = req.user.group;
+                updates.instanceRoles = req.user.instanceRoles || [];
+                updates.teams = req.user.teams || [];
+            } else {
+                updates.instanceRoles = req.body.instanceAdmin ? ['InstanceAdmin'] : [];
+                var teamInput = (req.body.team || '').trim();
+                if (teamInput) {
+                    var teamKey = Team.slugifyTeamKey(teamInput);
+                    if (teamKey) {
+                        await Team.ensureTeam(teamKey, teamInput);
+                        updates.teams = [{ team: teamKey, roles: ['Editor'] }];
+                    }
+                }
             }
             let query = {
                 username: updates.username
@@ -304,7 +295,7 @@ protected.get('/list', function (req, res) {
 
 protected.get('/list/json', function (req, res) {
     if (req.isAuthenticated()) {
-        User.find({group:req.user.group}, ['username','name','emoji'], {
+        User.find(teammateQuery(req.user), ['username','name','emoji'], {
             sort: {
                 username: 1
             }
@@ -325,7 +316,7 @@ protected.get('/list/json', function (req, res) {
 });
 protected.get('/list/css', function (req, res) {
     if (req.isAuthenticated()) {
-        User.find({group:req.user.group}, ['username','name','emoji'], {
+        User.find(teammateQuery(req.user), ['username','name','emoji'], {
             sort: {
                 username: 1
             }

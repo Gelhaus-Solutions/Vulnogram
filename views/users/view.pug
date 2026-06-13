@@ -19,17 +19,19 @@ block content
       label Username:
       tt=profile.username
     .entry
-      label CNA or group email:
-      tt=profile.group
+      label Teams:
+      tt
+        if profile.teams && profile.teams.length
+          = profile.teams.map(function(t){return t.team + ' (' + (t.roles||[]).join(', ') + ')';}).join('; ')
+        else
+          | (no team)
     .entry
-      label Privilege:
+      label Instance role:
       span
-        if profile.priv == 0
-            | Admin
-        else if profile.priv == 1
-            | Read/Write
-        else if profile.priv == 2
-            | Read only
+        if profile.instanceRoles && profile.instanceRoles.indexOf('InstanceAdmin') >= 0
+            | Instance Administrator
+        else
+            | Member
     .entry
         div.center
             a.user(href="/users/list") User list
