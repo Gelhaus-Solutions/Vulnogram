@@ -29,6 +29,28 @@ function parseStages(input) {
     return input.split(/[\n,]+/).map(function (s) { return s.trim(); }).filter(Boolean).slice(0, 50);
 }
 
+// Parse the CVE Services endpoints textarea (one "label | https://..." per line).
+function parseCveServices(input) {
+    if (!input || typeof input !== 'string') {
+        return [];
+    }
+    return input.split('\n').map(function (line) {
+        line = line.trim();
+        if (!line) { return null; }
+        var parts = line.split('|');
+        var label, url;
+        if (parts.length >= 2) {
+            label = parts[0].trim();
+            url = parts.slice(1).join('|').trim();
+        } else {
+            url = line;
+            label = line;
+        }
+        if (!/^https?:\/\//i.test(url)) { return null; }
+        return { label: label.substring(0, 40), url: url.substring(0, 200) };
+    }).filter(Boolean).slice(0, 20);
+}
+
 function hasAnyAdminCap(user) {
     return rbac.can(user, CAP.INSTANCE_SETTINGS) ||
         rbac.can(user, CAP.USER_MANAGE) ||
@@ -80,6 +102,7 @@ router.post('/settings', rbac.requireCap(CAP.INSTANCE_SETTINGS), csrfProtection,
                 ? Number(req.body.nvdIntervalHours)
                 : (conf.nvdSync ? conf.nvdSync.intervalHours : 12)
         };
+        values.cveServices = parseCveServices(req.body.cveServices);
         await settingsModel.save(values);
         await instanceSettings.apply();
         // Restart the in-app NVD scheduler only if its schedule actually changed.

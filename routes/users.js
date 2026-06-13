@@ -377,19 +377,21 @@ protected.get('/list/css', function (req, res) {
     }
 });
 // ---- CNA login profiles (hybrid): metadata only, the API key is NEVER stored ----
-const CNA_PORTAL_URLS = [
-    'https://cveawg.mitre.org/api',
-    'https://cveawg-test.mitre.org/api',
-    'https://cveawg-adp-test.mitre.org/api',
-    'http://127.0.0.1:3000/api'
-];
+// Endpoints come from instance settings (item 7), falling back to the built-ins.
+const instanceSettings = require('../lib/instance-settings');
+function cnaServices() {
+    return (conf.cveServices && conf.cveServices.length) ? conf.cveServices : instanceSettings.DEFAULT_CVE_SERVICES;
+}
+function cnaServiceUrls() {
+    return cnaServices().map(function (s) { return s.url; });
+}
 
 // Manage saved CNA logins.
 protected.get('/cna', csrfProtection, function (req, res) {
     res.render('users/cna', {
         title: 'CNA logins',
         profiles: req.user.cnaProfiles || [],
-        portalUrls: CNA_PORTAL_URLS,
+        portalUrls: cnaServices(),
         page: 'users',
         csrfToken: req.csrfToken()
     });
@@ -400,7 +402,8 @@ protected.get('/cna/json', function (req, res) {
     res.json({
         profiles: (req.user.cnaProfiles || []).map(function (p) {
             return { id: p.id, label: p.label, org: p.org, user: p.user, serviceUrl: p.serviceUrl };
-        })
+        }),
+        services: cnaServices()
     });
 });
 
@@ -414,8 +417,9 @@ protected.post('/cna', csrfProtection, async function (req, res) {
             req.flash('error', 'Org short name and CVE user are required.');
             return res.redirect('/users/cna');
         }
-        if (CNA_PORTAL_URLS.indexOf(serviceUrl) < 0) {
-            serviceUrl = CNA_PORTAL_URLS[0];
+        var urls = cnaServiceUrls();
+        if (urls.indexOf(serviceUrl) < 0) {
+            serviceUrl = urls[0];
         }
         if (!label) {
             label = org + ' / ' + user;

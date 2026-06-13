@@ -31,6 +31,11 @@ block content
     .row
       label.lbl.vgi-time Interval (hours):
       input.txt(name="nvdIntervalHours", type="number", min="1", value=(conf.nvdSync ? conf.nvdSync.intervalHours : 12))
+    h3.pad CVE Services endpoints
+    .row
+      label.lbl.vgi-globe Endpoints:
+      textarea.txt(name="cveServices", rows="4", placeholder="one per line: label | https://cveawg.mitre.org/api")= (conf.cveServices || []).map(function(s){ return (s.label || '') + ' | ' + (s.url || ''); }).join('\n')
+    p.sml.tgrey Used by the CVE Services login portal and saved CNA logins. Blank = built-in defaults.
     .gap
       button.btn.sfe(type="submit") Save settings
     p.sml.tgrey Empty fields fall back to the values in config/conf.js. Branding applies immediately; NVD schedule changes restart the in-app scheduler.

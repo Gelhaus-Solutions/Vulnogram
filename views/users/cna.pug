@@ -46,7 +46,7 @@ block content
       .row
         label.lbl.vgi-globe Portal:
         select.form-control(name="serviceUrl")
-          each u in portalUrls
-            option(value=u)= u
+          each s in portalUrls
+            option(value=s.url)= s.label + ' (' + s.url + ')'
       .gap
         button.btn.sfe(type="submit") Save login

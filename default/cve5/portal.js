@@ -354,6 +354,17 @@ async function cnaLoadProfiles() {
         sel.innerHTML = '<option value="">— manual entry —</option>' + cnaProfilesCache.map(function (p) {
             return '<option value="' + p.id + '">' + String(p.label || (p.org + '/' + p.user)).replace(/</g, '&lt;') + '</option>';
         }).join('');
+        // Repopulate the portal endpoint dropdown from instance-configured services.
+        var portalEl = document.getElementById('cpPortal');
+        if (portalEl && Array.isArray(data.services) && data.services.length) {
+            var current = portalEl.value;
+            portalEl.innerHTML = data.services.map(function (s) {
+                return '<option value="' + s.url + '">' + String(s.label || s.url).replace(/</g, '&lt;') + '</option>';
+            }).join('');
+            for (var i = 0; i < portalEl.options.length; i++) {
+                if (portalEl.options[i].value === current) { portalEl.selectedIndex = i; break; }
+            }
+        }
     } catch (e) { /* ignore */ }
 }
 function cnaProfileSelect(sel) {
@@ -1005,8 +1016,9 @@ function cveLoadIntoEditor(res, cveId, message, edOpts) {
 async function cveLoadFromCveOrg(cveId, suppressErrors) {
     var loadFeedback = new feedback(document.getElementById('editorContent'), 'spinner');
     try {
-
-        const response = await fetch('https://cveawg.mitre.org/api/cve/' + cveId, {
+        // Use the active CVE Services instance (test/prod/custom), not always production.
+        var serviceUrl = normalizePortalUrl((csCache && csCache.url) ? csCache.url : getStoredPortalSettings().portalUrl);
+        const response = await fetch(serviceUrl + '/cve/' + cveId, {
             method: 'GET',
             credentials: 'omit',
             headers: {
@@ -1016,7 +1028,7 @@ async function cveLoadFromCveOrg(cveId, suppressErrors) {
         if (response.ok) {
             const data = await response.json();
             if (data && data.cveMetadata) {
-                cveLoadIntoEditor(cveFixForVulnogram(data), cveId, "Loaded " + cveId + " from CVE.org");
+                cveLoadIntoEditor(cveFixForVulnogram(data), cveId, "Loaded " + cveId + " from CVE Services");
                 return data;
             }
         } else if (!suppressErrors) {
