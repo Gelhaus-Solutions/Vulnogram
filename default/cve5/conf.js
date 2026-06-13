@@ -12,6 +12,7 @@ module.exports = {
         uri: '/cve5/',
         class: 'vgi-cvev',
         disableDrafts: false,
+        teamScoped: true,
         order: 0.12, //Where to place the section on heading?
         shortcuts: [
             {
@@ -180,6 +181,13 @@ module.exports = {
             path: 'body.CNA_private.owner',
             chart: true,
             bulk: true
+        },
+        team: {
+            path: 'team',
+            tabs: true
+        },
+        visibility: {
+            path: 'visibility'
         }
     },
     schema: cve5,

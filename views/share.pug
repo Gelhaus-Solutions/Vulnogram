@@ -1,0 +1,32 @@
+//- Sharing controls for a team-scoped CVE document.
+extends layout
+
+block content
+  .pad2
+    h2= title
+    p.tgrey Control which team owns this CVE and who can see it.
+    - var sharedWith = doc.sharedWith || []
+    form(method="POST", action=basePath + doc_id + "/share")
+      input(type="hidden", name="_csrf", value=csrfToken)
+      .row
+        label.lbl.vgi-org Owning team:
+        select.form-control(name="team")
+          if !teams || !teams.length
+            option(value="") (no teams defined)
+          each t in teams
+            option(value=t.key, selected=doc.team==t.key)= t.name + ' (' + t.key + ')'
+      .row
+        label.lbl.vgi-lock Visibility:
+        select.form-control(name="visibility")
+          option(value="team", selected=doc.visibility!='private') Team — all members of the owning team
+          option(value="private", selected=doc.visibility=='private') Private — only me
+      .row
+        label.lbl.vgi-org Also share with teams:
+        .vflx
+          each t in teams
+            label
+              input(type="checkbox", name="sharedWith", value=t.key, checked=(sharedWith.indexOf(t.key) >= 0))
+              = ' ' + t.name + ' (' + t.key + ')'
+      .gap
+        button.btn.sfe(type="submit") Save sharing
+        a.fbn.vgi-undo(href=basePath + doc_id) Back to editor

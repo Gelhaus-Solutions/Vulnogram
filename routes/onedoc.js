@@ -6,6 +6,9 @@ var jsonpatch = require('json-patch-extended');
 var _ = require('lodash');
 const docModel = require('../models/doc');
 const querymw = require('../lib/querymw');
+const docAccess = require('../lib/doc-access');
+const rbac = require('../lib/rbac');
+const Team = require('../models/team');
 
 const {
     check,
@@ -43,6 +46,13 @@ module.exports = function (Document, opts) {
         q[opts.idpath] = req.params.id;
         try {
             var doc = await Document.findOne(q);
+            if (doc && opts.conf && opts.conf.teamScoped && !docAccess.canAccessDoc(req.user, doc)) {
+                res.status(403);
+                return res.render('blank', {
+                    title: 'Forbidden',
+                    message: 'You do not have access to ' + req.params.id + '.'
+                });
+            }
             var ucomments = undefined;
             if (!doc) {
                 if (req.params.id != 'new') {
@@ -209,6 +219,17 @@ module.exports = function (Document, opts) {
             createdAt: now,
             updatedAt: now
         };
+        if (opts.conf && opts.conf.teamScoped) {
+            if (!rbac.can(req.user, rbac.CAPABILITIES.CVE_CREATE)) {
+                res.json({ type: 'err', msg: 'You do not have permission to create CVEs.' });
+                return;
+            }
+            var pteam = docAccess.primaryTeam(req.user);
+            entry.owner = req.user.username;
+            entry.team = pteam;
+            entry.visibility = pteam ? 'team' : 'private';
+            entry.sharedWith = [];
+        }
         try {
             var inserted = await Document.insertOne(entry);
             var doc = Object.assign({}, entry, { _id: inserted.insertedId });
@@ -260,12 +281,33 @@ module.exports = function (Document, opts) {
                     return;
                 }
             }
+            var targetDoc = await Document.findOne(queryOldID);
+            if (opts.conf && opts.conf.teamScoped) {
+                if (targetDoc) {
+                    if (!docAccess.canAccessDoc(req.user, targetDoc) ||
+                        !docAccess.canWriteDoc(req.user, targetDoc, rbac.CAPABILITIES.CVE_EDIT)) {
+                        res.json({ type: 'err', msg: 'You do not have permission to edit this CVE.' });
+                        return;
+                    }
+                } else if (!rbac.can(req.user, rbac.CAPABILITIES.CVE_CREATE)) {
+                    res.json({ type: 'err', msg: 'You do not have permission to create CVEs.' });
+                    return;
+                }
+            }
             var d = new Date();
             var newDoc = {
                 body: req.body,
                 author: req.user.username,
                 updatedAt: d
             };
+            var setOnInsert = { createdAt: d };
+            if (opts.conf && opts.conf.teamScoped && !targetDoc) {
+                var newPteam = docAccess.primaryTeam(req.user);
+                setOnInsert.owner = req.user.username;
+                setOnInsert.team = newPteam;
+                setOnInsert.visibility = newPteam ? 'team' : 'private';
+                setOnInsert.sharedWith = [];
+            }
             var updateResult = await Document.findOneAndUpdate(
                 queryOldID,
                 {
@@ -273,9 +315,7 @@ module.exports = function (Document, opts) {
                     "$inc": {
                         __v: 1
                     },
-                    "$setOnInsert": {
-                        createdAt: d
-                    }
+                    "$setOnInsert": setOnInsert
                 }, {
                     upsert: true,
                     returnDocument: 'before'
@@ -311,10 +351,87 @@ module.exports = function (Document, opts) {
         let query = {};
         query[opts.idpath] = req.params.id;
         try {
+            if (opts.conf && opts.conf.teamScoped) {
+                var doc = await Document.findOne(query);
+                if (doc && (!docAccess.canAccessDoc(req.user, doc) ||
+                    !docAccess.canWriteDoc(req.user, doc, rbac.CAPABILITIES.CVE_DELETE))) {
+                    res.status(403);
+                    res.send('You do not have permission to delete this CVE.');
+                    return;
+                }
+            }
             await Document.deleteOne(query);
             res.send('Deleted');
         } catch (err) {
             res.send('Error Deleting');
+        }
+    });
+
+    // Sharing controls for team-scoped documents.
+    router.get('/:id/share', csrfProtection, async function (req, res) {
+        if (!(opts.conf && opts.conf.teamScoped)) {
+            return res.redirect('/' + opts.schemaName + '/' + req.params.id);
+        }
+        if (!idRegex.test(req.params.id)) {
+            req.flash('error', 'Invalid ID');
+            return res.render('blank');
+        }
+        var q = {};
+        q[opts.idpath] = req.params.id;
+        var doc = await Document.findOne(q);
+        if (!doc) {
+            req.flash('error', 'ID not found: ' + req.params.id);
+            return res.render('blank');
+        }
+        if (!docAccess.canAccessDoc(req.user, doc)) {
+            res.status(403);
+            return res.render('blank', { title: 'Forbidden', message: 'You do not have access to this CVE.' });
+        }
+        var teams = await Team.find({}, { sort: { key: 1 } });
+        res.render('share', {
+            title: 'Share ' + req.params.id,
+            doc_id: req.params.id,
+            doc: doc,
+            teams: teams,
+            basePath: '/' + opts.schemaName + '/',
+            csrfToken: req.csrfToken()
+        });
+    });
+
+    router.post('/:id/share', csrfProtection, async function (req, res) {
+        if (!(opts.conf && opts.conf.teamScoped)) {
+            return res.redirect('/' + opts.schemaName + '/' + req.params.id);
+        }
+        if (!idRegex.test(req.params.id)) {
+            req.flash('error', 'Invalid ID');
+            return res.render('blank');
+        }
+        var q = {};
+        q[opts.idpath] = req.params.id;
+        try {
+            var doc = await Document.findOne(q);
+            if (!doc) {
+                req.flash('error', 'ID not found: ' + req.params.id);
+                return res.render('blank');
+            }
+            if (!docAccess.canWriteDoc(req.user, doc, rbac.CAPABILITIES.CVE_EDIT)) {
+                res.status(403);
+                return res.render('blank', { title: 'Forbidden', message: 'You do not have permission to change sharing for this CVE.' });
+            }
+            var allTeams = await Team.find({}, { projection: { key: 1 } });
+            var validKeys = allTeams.map(function (t) { return t.key; });
+            var team = validKeys.indexOf(req.body.team) >= 0 ? req.body.team : doc.team;
+            var visibility = req.body.visibility === 'private' ? 'private' : 'team';
+            var sharedWith = req.body.sharedWith;
+            if (typeof sharedWith === 'string') { sharedWith = [sharedWith]; }
+            if (!Array.isArray(sharedWith)) { sharedWith = []; }
+            sharedWith = sharedWith.filter(function (k) { return validKeys.indexOf(k) >= 0 && k !== team; });
+            await Document.findOneAndUpdate(q, { $set: { team: team, visibility: visibility, sharedWith: sharedWith } });
+            req.flash('success', 'Sharing updated for ' + req.params.id);
+            res.redirect('/' + opts.schemaName + '/' + req.params.id);
+        } catch (err) {
+            req.flash('error', 'Failed to update sharing: ' + err.message);
+            res.render('blank');
         }
     });
 

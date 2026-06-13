@@ -10,6 +10,7 @@ var qs = require('querystring');
 const _ = require('lodash');
 const path = require('path');
 const toErrorMessage = require('../lib/error-message');
+const docAccess = require('../lib/doc-access');
 
 var queryMW;
 var queryMWBody;
@@ -194,6 +195,24 @@ module.exports = function (name, opts) {
     queryMW = querymw(opts.facet);
     queryMWBody = querymw(opts.facet, 'body');
 
+    // For teamScoped sections, restrict queries to docs the user may read.
+    function applyReadScope(q, user) {
+        if (!(opts.conf && opts.conf.teamScoped)) {
+            return q;
+        }
+        var f = docAccess.buildReadFilter(user);
+        if (!f) {
+            return q;
+        }
+        return (q && Object.keys(q).length) ? { $and: [q, f] } : f;
+    }
+    function teamScope(req, res, next) {
+        if (opts.conf && opts.conf.teamScoped && req.querymen) {
+            req.querymen.query = applyReadScope(req.querymen.query || {}, req.user);
+        }
+        next();
+    }
+
     var module = {};
     var Document = module.Document = docModel(opts.collectionName);
 
@@ -206,6 +225,16 @@ module.exports = function (name, opts) {
             console.log('Error ensuring text index: ' + e.message)
         });
 
+    }
+
+    if (opts.conf && opts.conf.teamScoped) {
+        ['team', 'owner', 'sharedWith', 'visibility'].forEach(function (field) {
+            var idx = {};
+            idx[field] = 1;
+            Document.createIndex(idx, { background: true }).catch(function (e) {
+                console.log('Error ensuring ' + field + ' index: ' + e.message);
+            });
+        });
     }
 
 
@@ -234,6 +263,7 @@ module.exports = function (name, opts) {
             q[idpath] = {
                 "$in": ids
             };
+            q = applyReadScope(q, req.user);
             try {
                 var docs = await Document.find(q, {
                     projection: {
@@ -259,6 +289,7 @@ module.exports = function (name, opts) {
             q[idpath] = {
                 "$in": req.body.ids
             };
+            q = applyReadScope(q, req.user);
             var fields = {
                 _id: 0
             };
@@ -317,6 +348,7 @@ module.exports = function (name, opts) {
 
     router.get('/list/',
         queryMW,
+        teamScope,
         async function (req, res) {
             var r = await Document.aggregate([
                 { $match: req.querymen.query },
@@ -342,17 +374,20 @@ module.exports = function (name, opts) {
 
     router.get(['/examples', '/examples/'],
         queryMW,
+        teamScope,
         async function (req, res) {
             return enumExamples(req, res, 'examples');
         });
     router.get(['/enum', '/enum/'],
         queryMW,
+        teamScope,
         async function (req, res) {
             return enumExamples(req, res, 'enum');
         });
 
     router.get('/agg/',
         queryMW,
+        teamScope,
         async function (req, res) {
             if (req.query.f) {
                 var f = req.query.f;
@@ -507,7 +542,7 @@ module.exports = function (name, opts) {
         return pipeLine;
     };
     /* The Main listing routine */
-    router.get('/', csrfProtection, queryMW, async function (req, res) {
+    router.get('/', csrfProtection, queryMW, teamScope, async function (req, res) {
         try {
 
             var pipeLine = normalizeQuery(req.querymen.query);
@@ -660,6 +695,7 @@ module.exports = function (name, opts) {
                         q.updatedAt = d;
                         var fq = {};
                         fq[idpath] = f;
+                        fq = applyReadScope(fq, req.user);
                         var docs = await Document.find(fq).toArray();
                         var results = [];
                         for (var d of docs) {
