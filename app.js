@@ -243,6 +243,9 @@ async function bootstrap() {
     let admin = require('./routes/admin');
     app.use('/admin', ensureAuthenticated, admin);
 
+    let templates = require('./routes/templates');
+    app.use('/templates', ensureAuthenticated, templates);
+
     let docs = require('./routes/doc');
 
     app.locals.confOpts = {};

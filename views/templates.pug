@@ -1,0 +1,31 @@
+//- CVE template management: list + delete. Templates are created/updated from
+//- the editor's "Configure Defaults" dialog.
+extends layout
+
+block content
+  .pad2
+    h2 CVE templates
+    p.tgrey Templates capture which fields show by default and their preset values for new CVEs. Create or update them from the editor's "Configure Defaults" dialog (the cog button), choosing "Me" or a team as the scope.
+    table.vtbl.wht
+      thead
+        tr
+          th Name
+          th Scope
+          th
+      tbody
+        each t in templates
+          tr
+            td= t.name
+            td
+              if t.scope == 'team'
+                | team: #{t.team}
+              else
+                | personal
+            td
+              form(method="POST", action="/templates/" + t._id + "/delete", onsubmit="return confirm('Delete template " + t.name + "?')")
+                input(type="hidden", name="_csrf", value=csrfToken)
+                button.fbn.vgi-del(type="submit") Delete
+        if !templates || !templates.length
+          tr
+            td(colspan=3)
+              span.sml.tgrey No templates yet — open a CVE, click the gear (Configure Defaults), set your fields, and "Save as template".

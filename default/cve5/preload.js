@@ -581,6 +581,9 @@ function openDefaultPropertiesSettings(event) {
         event.preventDefault();
     }
     syncDefaultPropertiesDialog();
+    if (typeof vgLoadTemplateList === 'function') {
+        vgLoadTemplateList();
+    }
     var dialog = document.getElementById('defaultPropertiesSettingsDialog');
     if (dialog && !dialog.open) {
         dialog.showModal();
@@ -617,6 +620,101 @@ window.openDefaultPropertiesSettings = openDefaultPropertiesSettings;
 window.saveDefaultPropertiesSettings = saveDefaultPropertiesSettings;
 window.resetDefaultPropertiesSettings = resetDefaultPropertiesSettings;
 window.setDefaultPropertiesPreset = setDefaultPropertiesPreset;
+
+// ---- Server-side templates (named, sharable default-property bundles) ----
+function vgTemplateCsrf() {
+    return (typeof csrfToken !== 'undefined') ? csrfToken : '';
+}
+
+function vgTemplateMsg(text) {
+    var msg = document.getElementById('templateMsg');
+    if (msg) { msg.textContent = text || ''; }
+}
+
+async function vgLoadTemplateList() {
+    try {
+        var res = await fetch('/templates/list/json', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+        if (!res.ok) { return; }
+        var data = await res.json();
+        var picker = document.getElementById('templatePicker');
+        if (picker) {
+            picker.innerHTML = '<option value="">— choose a template —</option>' +
+                (data.templates || []).map(function (t) {
+                    var label = t.name + (t.scope === 'team' ? ' (team: ' + t.team + ')' : '');
+                    return '<option value="' + t.id + '">' + label.replace(/</g, '&lt;') + '</option>';
+                }).join('');
+        }
+        var scopeSel = document.getElementById('templateScope');
+        if (scopeSel) {
+            var opts = '<option value="user">Me (personal)</option>';
+            (data.teams || []).forEach(function (tm) {
+                opts += '<option value="team:' + tm.key + '">Team: ' + String(tm.name || tm.key).replace(/</g, '&lt;') + '</option>';
+            });
+            scopeSel.innerHTML = opts;
+        }
+    } catch (e) { /* ignore */ }
+}
+
+async function vgApplyTemplate() {
+    var picker = document.getElementById('templatePicker');
+    if (!picker || !picker.value) { return; }
+    try {
+        var res = await fetch('/templates/' + encodeURIComponent(picker.value) + '/json', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+        if (!res.ok) { vgTemplateMsg('Could not load template.'); return; }
+        var t = await res.json();
+        applyDefaultPropertiesSelection(t.selection || {});
+        applyDefaultPropertyValues(t.values || {});
+        saveCachedDefaultPropertiesSettings(defaultPropertiesSelection, defaultPropertyValues);
+        if (typeof syncDefaultPropertiesDialog === 'function') { syncDefaultPropertiesDialog(); }
+        if (typeof refreshEditorForDefaultPropertySettings === 'function') { refreshEditorForDefaultPropertySettings(); }
+        vgTemplateMsg('Applied "' + t.name + '".');
+    } catch (e) {
+        vgTemplateMsg('Could not apply template.');
+    }
+}
+
+async function vgSaveTemplate() {
+    var nameEl = document.getElementById('templateName');
+    var scopeEl = document.getElementById('templateScope');
+    var name = nameEl ? nameEl.value.trim() : '';
+    if (!name) { vgTemplateMsg('Enter a template name.'); return; }
+    var selection = {};
+    for (var i = 0; i < defaultPropertiesTargetNames.length; i++) {
+        selection[defaultPropertiesTargetNames[i]] = collectSelectionFromDialog(defaultPropertiesTargetNames[i]);
+    }
+    var values = collectDefaultPropertyValuesFromDialog();
+    var scopeRaw = scopeEl ? scopeEl.value : 'user';
+    var scope = 'user', team = '';
+    if (scopeRaw.indexOf('team:') === 0) { scope = 'team'; team = scopeRaw.substring(5); }
+    var body = new URLSearchParams();
+    body.set('name', name);
+    body.set('scope', scope);
+    if (team) { body.set('team', team); }
+    body.set('selection', JSON.stringify(selection));
+    body.set('values', JSON.stringify(values));
+    try {
+        var res = await fetch('/templates', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'CSRF-Token': vgTemplateCsrf(), 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: body.toString()
+        });
+        var data = await res.json();
+        if (data && data.type === 'ok') {
+            vgTemplateMsg('Saved template "' + name + '".');
+            if (nameEl) { nameEl.value = ''; }
+            vgLoadTemplateList();
+        } else {
+            vgTemplateMsg((data && data.msg) ? data.msg : 'Save failed.');
+        }
+    } catch (e) {
+        vgTemplateMsg('Save failed.');
+    }
+}
+
+window.vgLoadTemplateList = vgLoadTemplateList;
+window.vgApplyTemplate = vgApplyTemplate;
+window.vgSaveTemplate = vgSaveTemplate;
 
 var publicEditorOption = cloneJSON(docEditorOptions);
 Object.assign(publicEditorOption.schema, docSchema.oneOf[0]);

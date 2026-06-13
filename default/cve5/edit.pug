@@ -154,11 +154,21 @@ block prepend content
                             input.hid#productPresetClosedSource(type="radio", name="productPreset", value="closedSource", onclick="setDefaultPropertiesPreset('productFields', this.value)")
                             label.lbl.vgi-package(for="productPresetClosedSource") Closed Source
                     #defaultPropertiesProductFields.pad.vflx
+            .bort.pad2.vflx.gap
+                b.lbl.vgi-text Templates
+                .flx.gap
+                    select.form-control#templatePicker
+                    button.fbn.sfe(type="button", onclick="vgApplyTemplate()") Apply template
+                .flx.gap
+                    input.txt#templateName(type="text", placeholder="New template name", size="22")
+                    select.form-control#templateScope
+                    button.fbn.vgi-add(type="button", onclick="vgSaveTemplate()") Save as template
+                .sml.tgrey#templateMsg
             center.gap
                 button.btn.sfe(type="button", onclick="saveDefaultPropertiesSettings()") Apply
-                | 
+                |
                 button.btn.vgi-reuse(type="button", onclick="resetDefaultPropertiesSettings()") Reset defaults
-                | 
+                |
                 button.btn.vgi-x(type="button", onclick="this.closest('dialog').close()") Close
     dialog.dlg.bor.rndx.shd#draftPublishDialog
         header.ban.sec.pad
