@@ -44,8 +44,23 @@ block append outputButtons
     //- a.vgi-download.fbn(type="button",oncontextmenu='saveCSAF(event, this);',onclick='saveCSAF(event, this);',target="_blank",title="Download CSAF") CSAF
     button.sfe.fbn.vgi-export(id="post1") Publish CVE
     if doc_id && doc_id != 'new'
-        a.rbtn.vgi-org#cveShareLink(href="/cve5/" + doc_id + "/share", title="Manage owning team & sharing") Share
-        button.rbtn.vgi-eye#cveWatchBtn(type="button", title="Watch this CVE for updates", data-id=doc_id, data-csrf=csrfToken, onclick="cveToggleWatch(this)")= (watching ? 'Watching' : 'Watch')
+        a.rbtn.vgi-org#cveShareLink(href="/cve5/" + doc_id + "/share", title="Sharing — owning team, visibility & folder")
+        button.rbtn.vgi-eye#cveWatchBtn(type="button", class=(watching ? 'sfe' : ''), title=((watching ? 'Watching — click to unwatch' : 'Watch this CVE') + (watchers && watchers.length ? ' · ' + watchers.join(', ') : '')), data-id=doc_id, data-csrf=csrfToken, onclick="cveToggleWatch(this)")
+            if watchers && watchers.length
+                small.sml(style="margin-left:.2em")= watchers.length
+        span.nobr.lbl.vgi-folder(title="Folder — organize this CVE", style="gap:.3em")
+            input.txt#cveFolder(type="text", list="cveFolderList", placeholder="Folder", value=folder, data-id=doc_id, data-csrf=csrfToken, onchange="cveSaveFolder(this)", style="width:8em")
+            datalist#cveFolderList
+                if folders
+                    each fo in folders
+                        option(value=fo)
+        if workflowLog && workflowLog.length
+            details.popup.vg-user-details
+                summary.rbtn.vgi-time(title="Workflow history")
+                .pop.wht.bor.rnd.shd.pad.sml(style="min-width:15em")
+                    b.lbl.vgi-time Workflow history
+                    each h in workflowLog
+                        div(style="white-space:nowrap")= (h.from || '—') + ' → ' + h.to + '  ·  ' + h.by
     button.rbtn.vgi-cog(type="button", title="Customize default CNA/ADP fields", onclick="return openDefaultPropertiesSettings(event);")
     a.rbtn.vgi-what(href="https://www.vulnogram.org/docs/",target="_blank")
 
@@ -63,14 +78,32 @@ block append scripts
             if(!id){ return; }
             fetch('/cve5/' + id + '/watch', {method:'POST', credentials:'same-origin', headers:{'CSRF-Token': btn.getAttribute('data-csrf')}})
                 .then(function(r){ return r.json(); })
-                .then(function(j){ if(j && j.type === 'ok'){ btn.textContent = j.watching ? 'Watching' : 'Watch'; } })
+                .then(function(j){ if(j && j.type === 'ok'){ btn.classList.toggle('sfe', !!j.watching); btn.title = j.watching ? 'Watching — click to unwatch' : 'Watch this CVE'; } })
+                .catch(function(){});
+        }
+        function cveSaveFolder(el){
+            var id = el.getAttribute('data-id');
+            if(!id){ return; }
+            fetch('/cve5/' + id + '/folder', {method:'POST', credentials:'same-origin', headers:{'CSRF-Token': el.getAttribute('data-csrf'), 'Content-Type':'application/x-www-form-urlencoded'}, body:'folder=' + encodeURIComponent(el.value)})
+                .then(function(r){ return r.json(); })
+                .then(function(j){ if(j && j.type === 'ok'){ el.style.borderColor = '#469090'; setTimeout(function(){ el.style.borderColor = ''; }, 800); } })
                 .catch(function(){});
         }
     - var compileScript = pugLib.compileFileClient('default/cve5/cvelist.pug', {name: "cveRender", basedir: '', compileDebug: false,inlineRuntimeFunctions: true})
             script !{compileScript}
 
 block prepend loadEditor
-    script 
+    script.
+        (function(){
+            var __wf = !{JSON.stringify(typeof wfStages !== 'undefined' ? wfStages : [])};
+            if (__wf && __wf.length && typeof docSchema !== 'undefined' && docSchema.definitions && docSchema.definitions.CNA_private) {
+                try {
+                    var __st = docSchema.definitions.CNA_private.properties.triage.properties.state;
+                    if (__st) { __st.enum = __wf; if (__wf.indexOf(__st.default) < 0) { __st.default = __wf[0]; } }
+                } catch (e) {}
+            }
+        })();
+    script
         include preload.js
 
 block append loadEditor

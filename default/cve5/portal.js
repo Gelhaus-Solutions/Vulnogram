@@ -409,6 +409,18 @@ async function portalLogout(message) {
     }
 }
 
+// Log out of the current CVE Services session and reopen the login box (which
+// shows the saved-login picker), so a user can switch between saved CNA profiles.
+async function cveSwitchLogin() {
+    await portalLogout();
+    if (typeof showPortalLogin === 'function') {
+        showPortalLogin();
+    }
+    if (typeof setPortalSidebarState === 'function') {
+        setPortalSidebarState(true);
+    }
+}
+
 async function showPortalView(orgInfo, userInfo) {
     try {
         var filterForm = document.getElementById("cvePortalFilter");

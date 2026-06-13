@@ -334,3 +334,11 @@ button.json-editor-btn-delete {
 #render.render table {border-spacing: 0; border: 1px solid #888; border-collapse: collapse;}
 #render.render table th { text-align:center;background-color:#88888822;}
 #render.render table td { padding:5px;border: 1px solid #888}
+
+/* CNA Internal Workflow: theme json-editor "categories" tabs to match the editor.
+   The html theme sets inline opacity/background on each tab, so we override with
+   !important; the active tab is the one json-editor leaves at inline opacity:1. */
+.tabs.je-tabholder--top { display: flex; flex-wrap: wrap; gap: 3px; margin: 0 0 .7em 0 !important; border-bottom: 2px solid rgba(70,144,144,.25); padding: 0; }
+.tabs.je-tabholder--top .je-tab--top { opacity: 1 !important; background: transparent !important; color: #36353f; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; padding: 6px 16px !important; margin: 0 !important; cursor: pointer; font-size: 14px; line-height: 1.6; white-space: nowrap; width: auto !important; float: none !important; text-align: center; }
+.tabs.je-tabholder--top .je-tab--top:hover { background: rgba(70,144,144,.10) !important; }
+.tabs.je-tabholder--top .je-tab--top[style*="opacity: 1"] { color: #469090; font-weight: 600; background: #fff !important; border-color: rgba(70,144,144,.35); border-bottom: 2px solid #469090; margin-bottom: -2px !important; }

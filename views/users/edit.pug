@@ -39,7 +39,7 @@ block content
       input.txt(name='password2', type='password', autocomplete="new-password")
     if admin
       .row
-        label.lbl.vgi-crown Instance roles:
+        label.lbl.vgi-king Instance roles:
         .vflx
           if instanceRoleDefs && instanceRoleDefs.length
             each r in instanceRoleDefs
@@ -85,7 +85,7 @@ block content
           else
             | (no team)
       .row
-        label.lbl.vgi-crown Instance role:
+        label.lbl.vgi-king Instance role:
         tt
           if profile.instanceRoles && profile.instanceRoles.length
             = profile.instanceRoles.join(', ')

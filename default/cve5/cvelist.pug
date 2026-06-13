@@ -168,6 +168,8 @@ mixin userstats
             dt Role:  
                 b= org && org.authority ? org.authority.active_roles : 'undefined'
             hr.bort
+            span.vgi-import.fbn(onclick="cveSwitchLogin()") Switch login
+            |
             span.vgi-exit.fbn(onclick="portalLogout()") Logout!
 
 mixin userDetail(u)

@@ -81,6 +81,21 @@ module.exports = function (Document, opts) {
                     ucomments: ucomments
                 });
             } else {
+                var folderList = [];
+                if (opts.conf && opts.conf.teamScoped) {
+                    try {
+                        var folderFilter = docAccess.buildReadFilter(req.user);
+                        folderList = (await Document.distinct('folder', folderFilter || {})).filter(Boolean).sort();
+                    } catch (e) { folderList = []; }
+                }
+                var wfStages = [];
+                if (opts.conf && opts.conf.teamScoped && doc && doc.team) {
+                    try {
+                        var wfTeamDoc = await Team.findByKey(doc.team);
+                        var stages = workflow.teamStages(wfTeamDoc);
+                        if (stages && stages.join(',') !== workflow.DEFAULT_STAGES.join(',')) { wfStages = stages; }
+                    } catch (e) { wfStages = []; }
+                }
                 res.render(opts.edit, {
                     title: req.params.id,
                     opts: opts,
@@ -91,7 +106,12 @@ module.exports = function (Document, opts) {
                     csrfToken: req.csrfToken(),
                     allowAjax: true,
                     ucomments: ucomments,
-                    watching: !!(doc && Array.isArray(doc.watchers) && req.user && doc.watchers.indexOf(req.user.username) >= 0)
+                    watching: !!(doc && Array.isArray(doc.watchers) && req.user && doc.watchers.indexOf(req.user.username) >= 0),
+                    watchers: (doc && Array.isArray(doc.watchers)) ? doc.watchers : [],
+                    workflowLog: (doc && Array.isArray(doc.workflowLog)) ? doc.workflowLog.slice().reverse() : [],
+                    folder: (doc && doc.folder) ? doc.folder : '',
+                    folders: folderList,
+                    wfStages: wfStages
                 });
             }
         } catch (err) {
@@ -489,6 +509,30 @@ module.exports = function (Document, opts) {
                 watching = true;
             }
             res.json({ type: 'ok', watching: watching });
+        } catch (err) {
+            res.json({ type: 'err', msg: err.message });
+        }
+    });
+
+    // Set the folder (organization) of a team-scoped document.
+    router.post('/:id/folder', csrfProtection, async function (req, res) {
+        if (!(opts.conf && opts.conf.teamScoped) || !idRegex.test(req.params.id)) {
+            return res.json({ type: 'err', msg: 'Not supported' });
+        }
+        var q = {};
+        q[opts.idpath] = req.params.id;
+        try {
+            var doc = await Document.findOne(q);
+            if (!doc) {
+                return res.json({ type: 'err', msg: 'Not found' });
+            }
+            if (!docAccess.canWriteDoc(req.user, doc, rbac.CAPABILITIES.CVE_EDIT)) {
+                res.status(403);
+                return res.json({ type: 'err', msg: 'You do not have permission to organize this CVE.' });
+            }
+            var folder = (req.body.folder || '').trim().substring(0, 80);
+            await Document.updateOne(q, { $set: { folder: folder } });
+            res.json({ type: 'ok', folder: folder });
         } catch (err) {
             res.json({ type: 'err', msg: err.message });
         }

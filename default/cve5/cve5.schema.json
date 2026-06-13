@@ -33,7 +33,7 @@
             "assignees": {
               "type": "array",
               "title": "Assignees",
-              "format": "select",
+              "format": "checkbox",
               "uniqueItems": true,
               "items": {
                 "type": "string",
@@ -47,7 +47,7 @@
             "reviewers": {
               "type": "array",
               "title": "Reviewers",
-              "format": "select",
+              "format": "checkbox",
               "uniqueItems": true,
               "items": {
                 "type": "string",
@@ -61,7 +61,7 @@
             "approvers": {
               "type": "array",
               "title": "Approvers",
-              "format": "select",
+              "format": "checkbox",
               "uniqueItems": true,
               "items": {
                 "type": "string",
