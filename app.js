@@ -336,6 +336,14 @@ async function bootstrap() {
     } catch (err) {
         console.error('NVD sync scheduler failed to start:', err.message);
     }
+
+    // Warm the NVD stats cache in the background if missing/stale, so /nvd is fast
+    // even when sync is disabled. Non-blocking.
+    try {
+        require('./lib/nvd-stats').refreshIfStale(24 * 60 * 60 * 1000).catch(function () {});
+    } catch (err) {
+        console.error('NVD stats warm-up failed:', err.message);
+    }
 }
 
 bootstrap();

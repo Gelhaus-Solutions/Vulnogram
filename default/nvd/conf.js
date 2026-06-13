@@ -41,7 +41,8 @@ conf:{
     name: 'NVD',
     disableDrafts: true,
     class: 'vgi-data',
-    collectionName: 'nvds'
+    collectionName: 'nvds',
+    cachedCharts: true
 },
 facet: {
     ID: {

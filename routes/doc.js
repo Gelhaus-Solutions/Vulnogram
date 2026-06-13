@@ -11,6 +11,7 @@ const _ = require('lodash');
 const path = require('path');
 const toErrorMessage = require('../lib/error-message');
 const docAccess = require('../lib/doc-access');
+const nvdStats = require('../lib/nvd-stats');
 
 var queryMW;
 var queryMWBody;
@@ -592,7 +593,20 @@ module.exports = function (name, opts) {
             var charts = [];
             var total = 0;
             var numCollation = { locale: "en_US", numericOrdering: true };
-            if (chartCount > 0) {
+            if (opts.conf && opts.conf.cachedCharts) {
+                // Serve precomputed (global) charts from nvd_stats and query only the
+                // paginated docs, instead of recomputing the heavy facet aggregations
+                // (e.g. the NVD vendor CPE-unwind) on every request.
+                total = await Document.countDocuments(req.querymen.query);
+                var aggQueryCached = [{ $match: req.querymen.query }].concat(allQuery);
+                docs = await Document.aggregate(aggQueryCached, { collation: numCollation }).toArray();
+                try {
+                    var statsDoc = await nvdStats.get();
+                    charts = (statsDoc && statsDoc.charts) ? [statsDoc.charts] : [];
+                } catch (e) {
+                    charts = [];
+                }
+            } else if (chartCount > 0) {
                 chartFacet.all = allQuery;
                 pipeLine.push({
                     $facet: chartFacet
