@@ -21,6 +21,14 @@ const CAP = rbac.CAPABILITIES;
 const ROLE_NAME_RE = /^[A-Za-z0-9 _-]{2,48}$/;
 const TEAM_NAME_RE = /^.{2,64}$/;
 
+// Parse a team's workflow stages from a textarea (one per line or comma-separated).
+function parseStages(input) {
+    if (!input || typeof input !== 'string') {
+        return [];
+    }
+    return input.split(/[\n,]+/).map(function (s) { return s.trim(); }).filter(Boolean).slice(0, 50);
+}
+
 function hasAnyAdminCap(user) {
     return rbac.can(user, CAP.INSTANCE_SETTINGS) ||
         rbac.can(user, CAP.USER_MANAGE) ||
@@ -229,7 +237,7 @@ router.post('/teams/new', rbac.requireCap(CAP.TEAM_MANAGE), csrfProtection, asyn
             req.flash('error', 'A team with key "' + key + '" already exists.');
             return res.redirect('/admin/teams/new');
         }
-        await Team.insertOne({ key: key, name: name, createdAt: new Date(), settings: {} });
+        await Team.insertOne({ key: key, name: name, createdAt: new Date(), settings: { stages: parseStages(req.body.stages) } });
         req.flash('success', 'Team "' + name + '" created.');
         res.redirect('/admin/teams');
     } catch (err) {
@@ -259,7 +267,7 @@ router.post('/teams/:key', rbac.requireCap(CAP.TEAM_MANAGE), csrfProtection, asy
             req.flash('error', 'Team name must be 2-64 characters.');
             return res.redirect('/admin/teams/' + encodeURIComponent(team.key));
         }
-        await Team.updateOne({ key: team.key }, { $set: { name: name } });
+        await Team.updateOne({ key: team.key }, { $set: { name: name, 'settings.stages': parseStages(req.body.stages) } });
         req.flash('success', 'Team "' + name + '" updated.');
         res.redirect('/admin/teams');
     } catch (err) {

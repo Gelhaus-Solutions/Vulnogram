@@ -9,6 +9,7 @@ const querymw = require('../lib/querymw');
 const docAccess = require('../lib/doc-access');
 const rbac = require('../lib/rbac');
 const Team = require('../models/team');
+const workflow = require('../lib/cna-workflow');
 
 const {
     check,
@@ -53,6 +54,9 @@ module.exports = function (Document, opts) {
                     message: 'You do not have access to ' + req.params.id + '.'
                 });
             }
+            if (doc && opts.conf && opts.conf.teamScoped && doc.body && doc.body.CNA_private) {
+                doc.body.CNA_private = workflow.normalize(doc.body.CNA_private);
+            }
             var ucomments = undefined;
             if (!doc) {
                 if (req.params.id != 'new') {
@@ -86,7 +90,8 @@ module.exports = function (Document, opts) {
                     textUtil: textUtil,
                     csrfToken: req.csrfToken(),
                     allowAjax: true,
-                    ucomments: ucomments
+                    ucomments: ucomments,
+                    watching: !!(doc && Array.isArray(doc.watchers) && req.user && doc.watchers.indexOf(req.user.username) >= 0)
                 });
             }
         } catch (err) {
@@ -289,6 +294,14 @@ module.exports = function (Document, opts) {
                         res.json({ type: 'err', msg: 'You do not have permission to edit this CVE.' });
                         return;
                     }
+                    var wfTeam = targetDoc.team ? await Team.findByKey(targetDoc.team) : null;
+                    var fromState = workflow.getState(targetDoc.body && targetDoc.body.CNA_private);
+                    var toState = workflow.getState(req.body && req.body.CNA_private);
+                    var tv = workflow.validateTransition(req.user, targetDoc, fromState, toState, wfTeam);
+                    if (!tv.ok) {
+                        res.json({ type: 'err', msg: tv.message });
+                        return;
+                    }
                 } else if (!rbac.can(req.user, rbac.CAPABILITIES.CVE_CREATE)) {
                     res.json({ type: 'err', msg: 'You do not have permission to create CVEs.' });
                     return;
@@ -326,6 +339,20 @@ module.exports = function (Document, opts) {
             } else {
                 var insertedDoc = await Document.findOne(queryNewID);
                 addHistory(null, insertedDoc || newDoc);
+            }
+            if (opts.conf && opts.conf.teamScoped && typeof toState !== 'undefined' && fromState !== toState) {
+                try {
+                    await Document.updateOne(queryNewID, {
+                        $push: {
+                            workflowLog: {
+                                $each: [{ at: new Date(), by: req.user.username, from: (fromState === undefined ? null : fromState), to: toState }],
+                                $slice: -100
+                            }
+                        }
+                    });
+                } catch (e) {
+                    // workflow audit is non-fatal
+                }
             }
             if (renaming) {
                 res.json({
@@ -432,6 +459,37 @@ module.exports = function (Document, opts) {
         } catch (err) {
             req.flash('error', 'Failed to update sharing: ' + err.message);
             res.render('blank');
+        }
+    });
+
+    // Watch / unwatch a team-scoped document (subscribe to it).
+    router.post('/:id/watch', csrfProtection, async function (req, res) {
+        if (!(opts.conf && opts.conf.teamScoped) || !idRegex.test(req.params.id)) {
+            return res.json({ type: 'err', msg: 'Not supported' });
+        }
+        var q = {};
+        q[opts.idpath] = req.params.id;
+        try {
+            var doc = await Document.findOne(q);
+            if (!doc) {
+                return res.json({ type: 'err', msg: 'Not found' });
+            }
+            if (!docAccess.canAccessDoc(req.user, doc)) {
+                res.status(403);
+                return res.json({ type: 'err', msg: 'No access' });
+            }
+            var watchers = Array.isArray(doc.watchers) ? doc.watchers : [];
+            var watching;
+            if (watchers.indexOf(req.user.username) >= 0) {
+                await Document.updateOne(q, { $pull: { watchers: req.user.username } });
+                watching = false;
+            } else {
+                await Document.updateOne(q, { $addToSet: { watchers: req.user.username } });
+                watching = true;
+            }
+            res.json({ type: 'ok', watching: watching });
+        } catch (err) {
+            res.json({ type: 'err', msg: err.message });
         }
     });
 

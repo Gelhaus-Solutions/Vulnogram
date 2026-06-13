@@ -121,12 +121,12 @@ module.exports = {
             }
         },        
         state: {
-            path: 'body.CNA_private.state',
+            path: 'body.CNA_private.triage.state',
             tabs: true,
             bulk: true,
         },
         type: {
-            path: 'body.CNA_private.type',
+            path: 'body.CNA_private.triage.type',
             tabs: true,
             bulk: true
         },
@@ -171,14 +171,19 @@ module.exports = {
             ]
         },
         ym: {
-            path: 'body.CNA_private.publish.ym',
+            path: 'body.CNA_private.triage.publish.ym',
             chart: true,
             hideColumn: true,
             sort: -1,
             icon: 'vgi-cal'
         },
         owner: {
-            path: 'body.CNA_private.owner',
+            path: 'body.CNA_private.people.owner',
+            chart: true,
+            bulk: true
+        },
+        priority: {
+            path: 'body.CNA_private.triage.priority',
             chart: true,
             bulk: true
         },

@@ -11,103 +11,256 @@
   "definitions": {
     "CNA_private": {
       "title": "CNA Internal Workflow",
-      "format": "grid",
+      "format": "categories",
       "options": {
         "containerClass": "bor pad rnd sec gap"
       },
       "properties": {
-        "owner": {
-          "type": "string",
-          "format": "radio",
-          "$ref": "/users/list/json",
-          "options": {
-            "grid_columns": 12,
-            "class": "vgi-user"
-          }
-        },
-        "state": {
-          "type": "string",
-          "format": "radio",
-          "enum": [
-            "new",
-            "open",
-            "draft",
-            "review",
-            "waiting",
-            "pending",
-            "closed"
-          ],
-          "default": "new",
-          "options": {
-            "grid_columns": 12,
-            "class": "vgi-knob"
-          }
-        },
-        "type": {
-          "type": "string",
-          "format": "radio",
-          "enum": [
-            "unsure",
-            "no-vuln",
-            "advisory",
-            "no-advisory",
-            "doc",
-            "misc",
-            "duplicate"
-          ],
-          "default": "unsure",
-          "options": {
-            "grid_columns": 12,
-            "class": "vgi-bucket"
-          }
-        },
-        "publish": {
+        "people": {
+          "title": "People",
           "type": "object",
-          "options": {
-            "hidden": true
-          },
+          "format": "grid",
           "properties": {
-            "ym": {
+            "owner": {
               "type": "string",
-              "template": "(context.d ? context.d.substr(0,7) : '')",
-              "watch": {
-                "d": "root.containers.cna.providerMetadata.datePublic"
+              "format": "radio",
+              "$ref": "/users/list/json",
+              "options": {
+                "grid_columns": 12,
+                "class": "vgi-user"
               }
             },
-            "year": {
-              "type": "string",
-              "template": "(context.d ? context.d.substr(0,4) : '')",
-              "watch": {
-                "d": "root.containers.cna.providerMetadata.datePublic"
+            "assignees": {
+              "type": "array",
+              "title": "Assignees",
+              "format": "select",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "$ref": "/users/list/json"
+              },
+              "options": {
+                "grid_columns": 12,
+                "class": "vgi-user"
               }
             },
-            "month": {
-              "type": "string",
-              "template": "(context.d ? context.d.substr(5,2) : '')",
-              "watch": {
-                "d": "root.containers.cna.providerMetadata.datePublic"
+            "reviewers": {
+              "type": "array",
+              "title": "Reviewers",
+              "format": "select",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "$ref": "/users/list/json"
+              },
+              "options": {
+                "grid_columns": 12,
+                "class": "vgi-eye"
+              }
+            },
+            "approvers": {
+              "type": "array",
+              "title": "Approvers",
+              "format": "select",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "$ref": "/users/list/json"
+              },
+              "options": {
+                "grid_columns": 12,
+                "class": "vgi-cap"
               }
             }
           }
         },
-        "todo": {
-          "title": "Reminders",
-          "type": "array",
-          "format": "table",
-          "items": {
-            "title": "action item",
-            "type": "string"
-          },
-          "options": {
-            "grid_columns": 6,
-            "class": "vgi-task"
+        "triage": {
+          "title": "Triage",
+          "type": "object",
+          "format": "grid",
+          "properties": {
+            "state": {
+              "type": "string",
+              "format": "radio",
+              "enum": [
+                "new",
+                "open",
+                "draft",
+                "review",
+                "waiting",
+                "pending",
+                "closed"
+              ],
+              "default": "new",
+              "options": {
+                "grid_columns": 12,
+                "class": "vgi-knob"
+              }
+            },
+            "type": {
+              "type": "string",
+              "format": "radio",
+              "enum": [
+                "unsure",
+                "no-vuln",
+                "advisory",
+                "no-advisory",
+                "doc",
+                "misc",
+                "duplicate"
+              ],
+              "default": "unsure",
+              "options": {
+                "grid_columns": 12,
+                "class": "vgi-bucket"
+              }
+            },
+            "priority": {
+              "type": "string",
+              "title": "Priority",
+              "format": "radio",
+              "enum": [
+                "urgent",
+                "high",
+                "normal",
+                "low"
+              ],
+              "default": "normal",
+              "options": {
+                "grid_columns": 6,
+                "class": "vgi-dial"
+              }
+            },
+            "severity": {
+              "type": "string",
+              "title": "Internal severity",
+              "format": "radio",
+              "enum": [
+                "critical",
+                "high",
+                "medium",
+                "low",
+                "none"
+              ],
+              "options": {
+                "grid_columns": 6,
+                "class": "vgi-knob"
+              }
+            },
+            "labels": {
+              "type": "array",
+              "title": "Labels",
+              "format": "table",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "title": "label"
+              },
+              "options": {
+                "grid_columns": 12,
+                "class": "vgi-tag"
+              }
+            },
+            "publish": {
+              "type": "object",
+              "options": {
+                "hidden": true
+              },
+              "properties": {
+                "ym": {
+                  "type": "string",
+                  "template": "(context.d ? context.d.substr(0,7) : '')",
+                  "watch": {
+                    "d": "root.containers.cna.providerMetadata.datePublic"
+                  }
+                },
+                "year": {
+                  "type": "string",
+                  "template": "(context.d ? context.d.substr(0,4) : '')",
+                  "watch": {
+                    "d": "root.containers.cna.providerMetadata.datePublic"
+                  }
+                },
+                "month": {
+                  "type": "string",
+                  "template": "(context.d ? context.d.substr(5,2) : '')",
+                  "watch": {
+                    "d": "root.containers.cna.providerMetadata.datePublic"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "dates": {
+          "title": "Dates",
+          "type": "object",
+          "format": "grid",
+          "properties": {
+            "due": {
+              "type": "string",
+              "title": "Due date",
+              "format": "date",
+              "options": {
+                "grid_columns": 6,
+                "class": "vgi-cal"
+              }
+            },
+            "embargo": {
+              "type": "string",
+              "title": "Embargo / disclosure date",
+              "format": "date",
+              "options": {
+                "grid_columns": 6,
+                "class": "vgi-time"
+              }
+            }
+          }
+        },
+        "checklist": {
+          "title": "Checklist",
+          "type": "object",
+          "properties": {
+            "todo": {
+              "title": "Reminders",
+              "type": "array",
+              "format": "table",
+              "items": {
+                "type": "object",
+                "title": "action item",
+                "properties": {
+                  "task": {
+                    "type": "string",
+                    "title": "task"
+                  },
+                  "done": {
+                    "type": "boolean",
+                    "format": "checkbox",
+                    "title": "done"
+                  }
+                }
+              },
+              "options": {
+                "class": "vgi-task"
+              }
+            }
+          }
+        },
+        "notes": {
+          "title": "Notes",
+          "type": "object",
+          "properties": {
+            "notes": {
+              "type": "string",
+              "title": "Internal notes",
+              "format": "textarea",
+              "options": {
+                "class": "vgi-text"
+              }
+            }
           }
         }
-      },
-      "required": [
-        "owner",
-        "todo"
-      ]
+      }
     },
     "generator": {},
     "uriType": {

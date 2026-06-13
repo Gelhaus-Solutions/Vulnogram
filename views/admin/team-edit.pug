@@ -18,6 +18,9 @@ block content
     .row
       label.lbl.vgi-org Name:
       input.txt(name="name", type="text", value=team.name)
+    .row
+      label.lbl.vgi-knob Workflow stages:
+      textarea.txt(name="stages", rows="4", placeholder="one stage per line; blank = defaults (new, open, draft, review, waiting, pending, closed)")= (team.settings && team.settings.stages ? team.settings.stages.join('\n') : '')
     .gap
       button.btn.sfe(type="submit") Save team
       a.fbn.vgi-undo(href="/admin/teams") Cancel

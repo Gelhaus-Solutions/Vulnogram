@@ -45,6 +45,7 @@ block append outputButtons
     button.sfe.fbn.vgi-export(id="post1") Publish CVE
     if doc_id && doc_id != 'new'
         a.rbtn.vgi-org#cveShareLink(href="/cve5/" + doc_id + "/share", title="Manage owning team & sharing") Share
+        button.rbtn.vgi-eye#cveWatchBtn(type="button", title="Watch this CVE for updates", data-id=doc_id, data-csrf=csrfToken, onclick="cveToggleWatch(this)")= (watching ? 'Watching' : 'Watch')
     button.rbtn.vgi-cog(type="button", title="Customize default CNA/ADP fields", onclick="return openDefaultPropertiesSettings(event);")
     a.rbtn.vgi-what(href="https://www.vulnogram.org/docs/",target="_blank")
 
@@ -56,6 +57,15 @@ block append scripts
         include cve.js
         //include csaf.js
         include portal.js
+    script.
+        function cveToggleWatch(btn){
+            var id = btn.getAttribute('data-id');
+            if(!id){ return; }
+            fetch('/cve5/' + id + '/watch', {method:'POST', credentials:'same-origin', headers:{'CSRF-Token': btn.getAttribute('data-csrf')}})
+                .then(function(r){ return r.json(); })
+                .then(function(j){ if(j && j.type === 'ok'){ btn.textContent = j.watching ? 'Watching' : 'Watch'; } })
+                .catch(function(){});
+        }
     - var compileScript = pugLib.compileFileClient('default/cve5/cvelist.pug', {name: "cveRender", basedir: '', compileDebug: false,inlineRuntimeFunctions: true})
             script !{compileScript}
 
