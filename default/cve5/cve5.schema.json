@@ -1905,7 +1905,7 @@
                       "placeholder": "eg., CWE-20 Improper Input Validation"
                     }
                   },
-                  "$ref": "js/cwe-all.json"
+                  "$ref": "js/cwe-mappable.json"
                 },
                 "type": {
                   "type": "string",
