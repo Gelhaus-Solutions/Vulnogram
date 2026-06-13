@@ -453,7 +453,8 @@ module.exports = function (Document, opts) {
             if (typeof sharedWith === 'string') { sharedWith = [sharedWith]; }
             if (!Array.isArray(sharedWith)) { sharedWith = []; }
             sharedWith = sharedWith.filter(function (k) { return validKeys.indexOf(k) >= 0 && k !== team; });
-            await Document.findOneAndUpdate(q, { $set: { team: team, visibility: visibility, sharedWith: sharedWith } });
+            var folder = (req.body.folder || '').trim().substring(0, 80);
+            await Document.findOneAndUpdate(q, { $set: { team: team, visibility: visibility, sharedWith: sharedWith, folder: folder } });
             req.flash('success', 'Sharing updated for ' + req.params.id);
             res.redirect('/' + opts.schemaName + '/' + req.params.id);
         } catch (err) {

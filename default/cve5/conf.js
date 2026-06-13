@@ -193,6 +193,24 @@ module.exports = {
         },
         visibility: {
             path: 'visibility'
+        },
+        folder: {
+            path: 'folder',
+            tabs: true,
+            bulk: true
+        },
+        labels: {
+            path: 'body.CNA_private.triage.labels',
+            chart: true,
+            hideColumn: true,
+            pipeline: [
+                {
+                    $unwind: "$body.CNA_private.triage.labels"
+                },
+                {
+                    $sortByCount: "$body.CNA_private.triage.labels"
+                }
+            ]
         }
     },
     schema: cve5,

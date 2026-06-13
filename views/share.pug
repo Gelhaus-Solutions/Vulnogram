@@ -21,6 +21,9 @@ block content
           option(value="team", selected=doc.visibility!='private') Team — all members of the owning team
           option(value="private", selected=doc.visibility=='private') Private — only me
       .row
+        label.lbl.vgi-folder Folder:
+        input.txt(name="folder", type="text", value=doc.folder, placeholder="optional, e.g. 2024-Q1 or Embargoed")
+      .row
         label.lbl.vgi-org Also share with teams:
         .vflx
           each t in teams

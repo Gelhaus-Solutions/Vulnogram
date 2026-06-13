@@ -228,7 +228,7 @@ module.exports = function (name, opts) {
     }
 
     if (opts.conf && opts.conf.teamScoped) {
-        ['team', 'owner', 'sharedWith', 'visibility'].forEach(function (field) {
+        ['team', 'owner', 'sharedWith', 'visibility', 'folder'].forEach(function (field) {
             var idx = {};
             idx[field] = 1;
             Document.createIndex(idx, { background: true }).catch(function (e) {
