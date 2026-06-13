@@ -657,6 +657,23 @@ async function cveUpdateUser(f) {
         }
         if (csCache.user != f.u.value) {
             params.active = f.active.checked;
+            // #187: prevent removing/deactivating the org's last active administrator.
+            var willBeActiveAdmin = f.active.checked && f.admin.checked;
+            if (!willBeActiveAdmin) {
+                try {
+                    var orgUsers = await csClient.getOrgUsers();
+                    var admins = (orgUsers && orgUsers.users ? orgUsers.users : []).filter(function (u) {
+                        return u && u.active && u.authority && Array.isArray(u.authority.active_roles) && u.authority.active_roles.indexOf('ADMIN') >= 0;
+                    });
+                    var targetIsLastAdmin = admins.length <= 1 && admins.some(function (u) { return u.username === f.u.value; });
+                    if (targetIsLastAdmin) {
+                        cveShowError({ error: 'Last administrator', message: 'Cannot remove or deactivate the last active administrator of this organization. Promote another user to admin first.' });
+                        return;
+                    }
+                } catch (e) {
+                    // If the admin count cannot be verified, fall through; CVE Services may still reject.
+                }
+            }
             if (f.admin.checked) {
                 params["active_roles.add"] = 'ADMIN'
             } else {
