@@ -6,6 +6,9 @@ const os = require('os');
 const Busboy = require('busboy');
 const fs = require('fs');
 var sanitizeFile = require("sanitize-filename");
+const docAccess = require('../lib/doc-access');
+const rbac = require('../lib/rbac');
+const toErrorMessage = require('../lib/error-message');
 // input doc, opts
 
 module.exports = function (Document, opts) {
@@ -34,7 +37,42 @@ module.exports = function (Document, opts) {
             return next();
         }
     }
-    router.post('/:id/file', csrfProtection, checkPattern, checkDir, async function (req, res) {
+
+    // Team/doc-access gate for the attachment routes. For teamScoped sections
+    // only: load the doc by id and verify the user may access it (reads) or
+    // write to it (mutations, when `capability` is given). Non-teamScoped
+    // sections short-circuit so other plugins are unaffected. Without this,
+    // any authenticated user could reach another team's files by guessing the
+    // document id (which undercuts the team-scoping in doc.js/onedoc.js).
+    function checkDocAccess(capability) {
+        return async function (req, res, next) {
+            if (!(opts.conf && opts.conf.teamScoped)) {
+                return next();
+            }
+            try {
+                var fq = {};
+                fq[opts.idpath] = req.params.id;
+                var doc = await Document.findOne(fq);
+                if (!doc) {
+                    res.status(404);
+                    return res.json({ type: 'err', msg: 'Document not found.' });
+                }
+                if (!docAccess.canAccessDoc(req.user, doc)) {
+                    res.status(403);
+                    return res.json({ type: 'err', msg: 'You do not have access to this document.' });
+                }
+                if (capability && !docAccess.canWriteDoc(req.user, doc, capability)) {
+                    res.status(403);
+                    return res.json({ type: 'err', msg: 'You do not have permission for this action.' });
+                }
+                return next();
+            } catch (e) {
+                res.status(500);
+                return res.json({ type: 'err', msg: toErrorMessage(e) });
+            }
+        };
+    }
+    router.post('/:id/file', csrfProtection, checkPattern, checkDir, checkDocAccess(rbac.CAPABILITIES.CVE_EDIT), async function (req, res) {
         var fq = {};
         fq[opts.idpath] = req.params.id;
         var doc = await Document.findOne(fq);
@@ -147,7 +185,7 @@ module.exports = function (Document, opts) {
     });
 
     //GET file contents
-    router.get('/:id/file/:filename', checkPattern, checkDir,
+    router.get('/:id/file/:filename', checkPattern, checkDir, checkDocAccess(),
         async function (req, res, next) {
             res.setHeader("Content-Security-Policy", "default-src 'none'; connect-src 'none'");
             return next();
@@ -156,19 +194,20 @@ module.exports = function (Document, opts) {
     );
 
     // delete file
-    router.delete('/:id/file/:filename', csrfProtection, checkPattern, checkDir, async function (req, res) {
+    router.delete('/:id/file/:filename', csrfProtection, checkPattern, checkDir, checkDocAccess(rbac.CAPABILITIES.CVE_EDIT), async function (req, res) {
         var fq = {};
         fq[opts.idpath] = req.params.id;
         try {
             var ret = await Document.updateOne(fq, { $pull: { files: { name: req.params.filename } } });
             res.json({ ok: ret.acknowledged ? 1 : 0, n: ret.modifiedCount });
         } catch (e) {
-            res.json(e);
+            res.status(500);
+            res.json({ ok: 0, msg: toErrorMessage(e) });
         }
     });
 
     // file listing in JSON format
-    router.get('/files/:id', checkPattern, checkDir,
+    router.get('/files/:id', checkPattern, checkDir, checkDocAccess(),
         async function (req, res, next) {
             res.setHeader("Content-Security-Policy", "default-src 'none'; connect-src 'none'");
             return next();
@@ -182,7 +221,7 @@ module.exports = function (Document, opts) {
         });
 
     // Directory listing
-    router.get('/:id/file/', checkPattern, checkDir, function (req, res) {
+    router.get('/:id/file/', checkPattern, checkDir, checkDocAccess(), function (req, res) {
         fs.readdir(path.join(opts.conf.files, req.params.id, '/file/'), function (err, items) {
             res.render(opts.list, {
                 title: req.params.id + ' files',

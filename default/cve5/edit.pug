@@ -129,6 +129,11 @@ block customtabs
                 a.vgi-download.fbn.right(type="button",oncontextmenu='downloadHtml(document.getElementById("cvetitle").innerText, render, this);',onclick='downloadHtml(document.getElementById("cvetitle").innerText, render, this);',value="Download") Download
                 a.vgi-mail.fbn.right(type="button",oncontextmenu='draftEmail(event, this, "render");',onclick='draftEmail(event, this,"render");',value="Email") Email
             div.render(id="render")
+        input.tab(name='tabs', type='radio', id='nvdrefTab', value="5")
+        label.lbl.vgi-data(for='nvdrefTab') NVD Reference
+        .fil.bort.pad
+            p.sml.tgrey Read-only reference data from the local NVD mirror.
+            div.render#nvdRefRender
 
 block prepend content
     dialog.dlg.bor.rndx.shd#cveErrorsModal

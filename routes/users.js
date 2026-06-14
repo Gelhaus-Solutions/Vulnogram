@@ -300,7 +300,7 @@ public.post('/login', csrfProtection, function (req, res, next) {
 });
 
 // Logout form
-public.get('/logout', function (req, res) {
+public.get('/logout', function (req, res, next) {
     req.logout(function(err){
         if(err) {
             return next(err);
@@ -456,12 +456,19 @@ protected.post('/cna/:id/delete', csrfProtection, async function (req, res) {
 protected.post('/active-team', csrfProtection, function (req, res) {
     var key = (req.body && req.body.team) || '';
     var back = req.get('Referer') || '/';
+    var ok = true;
     if (key === '' || key === '*') {
         req.session.activeTeam = null;
     } else if (Array.isArray(req.user.teams) && req.user.teams.some(function (t) { return t.team === key; })) {
         req.session.activeTeam = key;
     } else {
+        ok = false;
         req.flash('error', 'You are not a member of that team.');
+    }
+    // AJAX callers (the team switcher) get JSON; the no-JS <form> fallback redirects.
+    var wantsJson = req.xhr || (req.get('Accept') || '').indexOf('application/json') >= 0;
+    if (wantsJson) {
+        return res.json({ ok: ok, activeTeam: req.session.activeTeam || '' });
     }
     res.redirect(back);
 });

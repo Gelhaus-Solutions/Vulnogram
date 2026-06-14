@@ -4051,6 +4051,9 @@
         "dataVersion": {
           "$ref": "#/definitions/dataVersion"
         },
+        "CNA_private": {
+          "$ref": "#/definitions/CNA_private"
+        },
         "cveMetadata": {
           "$ref": "#/definitions/cveMetadataRejected"
         },

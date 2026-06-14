@@ -1,0 +1,90 @@
+//- NVD sync status panel. Gated by nvd.manage. Reads the persisted sync-state
+//- singleton (lib/nvd-sync-state) plus the cached stats (lib/nvd-stats).
+extends ../layout
+
+block content
+  include adminnav
+  .pad2
+    h2 NVD sync
+
+    - var ns = nvdSync || {}
+    - var st = state || {}
+    - var cp = (st.checkpoint && Array.isArray(st.checkpoint.years)) ? st.checkpoint.years : []
+    - var totalCount = (typeof st.total === 'number') ? st.total : ((stats && typeof stats.total === 'number') ? stats.total : null)
+    - var staleRunning = st.running && st.startedAt && ((Date.now() - new Date(st.startedAt).getTime()) > 6*60*60*1000)
+
+    if !ns.enabled
+      p.tred
+        | NVD sync is disabled. Enable it in
+        a(href="/admin/settings") Instance settings
+        |  to schedule automatic updates.
+
+    table.vtbl.wht
+      tbody
+        tr
+          th Status
+          td
+            if st.running && !staleRunning
+              b.rnd.tag-s.HIGH Running
+              if st.phase
+                |  (#{st.phase})
+            else if staleRunning
+              b.rnd.tag-s.MEDIUM Stale — started over 6h ago (likely interrupted)
+            else
+              b.rnd.tag-s.NONE Idle
+        tr
+          th Source
+          td= ns.source || 'mirror'
+        tr
+          th Interval
+          td #{ns.intervalHours || 12} hour(s)
+        tr
+          th Backfill on empty
+          td= (ns.backfillOnEmpty === false) ? 'no' : 'yes'
+        tr
+          th Prune older than
+          td= (ns.pruneOlderThanYears && ns.pruneOlderThanYears > 0) ? (ns.pruneOlderThanYears + ' year(s)') : 'off'
+        tr
+          th Records stored
+          td= (totalCount === null) ? 'unknown' : totalCount
+        if st.progress && st.progress.message
+          tr
+            th Progress
+            td
+              = st.progress.message
+              if st.progress.current && st.progress.total
+                |  (#{st.progress.current}/#{st.progress.total})
+        if cp.length
+          tr
+            th Backfill checkpoint
+            td #{cp.length} year(s) completed
+        tr
+          th Last run
+          td
+            if st.lastReason
+              | #{st.lastReason} ·
+            if st.finishedAt
+              = new Date(st.finishedAt).toLocaleString()
+            else if st.startedAt
+              | started
+              = new Date(st.startedAt).toLocaleString()
+            else
+              | never
+        if st.lastResult && st.lastResult.summary
+          tr
+            th Last result
+            td= st.lastResult.summary
+        if st.lastError && st.lastError.message
+          tr
+            th.tred Last error
+            td.tred= st.lastError.message
+
+    .gap.flx.nobr
+      form(method="POST", action="/admin/nvd/run", style="display:inline")
+        input(type="hidden", name="_csrf", value=csrfToken)
+        button.btn.sfe(type="submit", disabled=(st.running && !staleRunning)) Run sync now
+      |
+      form(method="POST", action="/admin/nvd/reset-checkpoint", style="display:inline", onsubmit="return confirm('Clear the backfill checkpoint? The next empty-collection sync will re-download all years.')")
+        input(type="hidden", name="_csrf", value=csrfToken)
+        button.btn(type="submit") Force full re-backfill
+    p.sml.tgrey Status updates as the in-app scheduler runs — reload to refresh. An interrupted backfill resumes from the last completed year. Pruning is opt-in (set nvdSync.pruneOlderThanYears).

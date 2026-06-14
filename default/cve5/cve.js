@@ -57,6 +57,11 @@
             return this._middleware.send({ type: 'hasRemembered', org, user });
         }
 
+        // List saved logins with a remembered key on this device ([{org,user,rememberedAt}]).
+        listRemembered() {
+            return this._middleware.send({ type: 'listRemembered' });
+        }
+
         // Delete the remembered key for org/user.
         forgetKey(org, user) {
             return this._middleware.send({ type: 'forget', org, user });

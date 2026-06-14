@@ -15,3 +15,5 @@ block content
         a.lbl.vgi-king(href="/admin/roles") Roles — custom capability bundles
       if can && can('team.manage')
         a.lbl.vgi-org(href="/admin/teams") Teams — create and manage teams
+      if can && can('nvd.manage')
+        a.lbl.vgi-data(href="/admin/nvd") NVD sync — backfill status, run sync, checkpoint

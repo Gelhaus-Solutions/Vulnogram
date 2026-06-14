@@ -14,6 +14,8 @@ const User = require('../models/user');
 const settingsModel = require('../models/settings');
 const instanceSettings = require('../lib/instance-settings');
 const nvdScheduler = require('../lib/nvd-scheduler');
+const nvdSyncState = require('../lib/nvd-sync-state');
+const nvdStats = require('../lib/nvd-stats');
 const conf = require('../config/conf');
 const toErrorMessage = require('../lib/error-message');
 
@@ -55,7 +57,8 @@ function hasAnyAdminCap(user) {
     return rbac.can(user, CAP.INSTANCE_SETTINGS) ||
         rbac.can(user, CAP.USER_MANAGE) ||
         rbac.can(user, CAP.ROLE_MANAGE) ||
-        rbac.can(user, CAP.TEAM_MANAGE);
+        rbac.can(user, CAP.TEAM_MANAGE) ||
+        rbac.can(user, CAP.NVD_MANAGE);
 }
 
 // Whole-area guard: must hold at least one administrative capability.
@@ -116,6 +119,46 @@ router.post('/settings', rbac.requireCap(CAP.INSTANCE_SETTINGS), csrfProtection,
         req.flash('error', toErrorMessage(err));
         res.redirect('/admin/settings');
     }
+});
+
+// ---- NVD sync status ----
+router.get('/nvd', rbac.requireCap(CAP.NVD_MANAGE), csrfProtection, async function (req, res) {
+    var state = await nvdSyncState.get();
+    var stats = null;
+    try { stats = await nvdStats.get(); } catch (e) { stats = null; }
+    res.render('admin/nvd', {
+        title: 'NVD sync',
+        state: state,
+        stats: stats,
+        nvdSync: conf.nvdSync || {},
+        csrfToken: req.csrfToken()
+    });
+});
+
+router.post('/nvd/run', rbac.requireCap(CAP.NVD_MANAGE), csrfProtection, function (req, res) {
+    try {
+        var started = nvdScheduler.runNow('manual');
+        if (started) {
+            // Fire-and-forget; runOnce records its own outcome/errors in nvd_sync_state.
+            if (typeof started.catch === 'function') { started.catch(function () {}); }
+            req.flash('success', 'NVD sync started. Refresh this page to follow progress.');
+        } else {
+            req.flash('error', 'NVD sync is not enabled. Enable it in Instance settings first.');
+        }
+    } catch (err) {
+        req.flash('error', toErrorMessage(err));
+    }
+    res.redirect('/admin/nvd');
+});
+
+router.post('/nvd/reset-checkpoint', rbac.requireCap(CAP.NVD_MANAGE), csrfProtection, async function (req, res) {
+    try {
+        await nvdSyncState.reset();
+        req.flash('success', 'Backfill checkpoint cleared. The next empty-collection sync will re-download all years.');
+    } catch (err) {
+        req.flash('error', toErrorMessage(err));
+    }
+    res.redirect('/admin/nvd');
 });
 
 // ---- Roles ----

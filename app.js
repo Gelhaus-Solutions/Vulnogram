@@ -235,12 +235,19 @@ async function getTeamNameMap() {
 app.use(async function (req, res, next) {
     res.locals.userTeams = [];
     res.locals.activeTeam = (req.session && req.session.activeTeam) || '';
+    res.locals.teamNames = {};
     try {
-        if (req.user && Array.isArray(req.user.teams) && req.user.teams.length) {
+        if (req.user) {
             var map = await getTeamNameMap();
-            res.locals.userTeams = req.user.teams
-                .map(function (t) { return { key: t.team, name: map[t.team] || t.team }; })
-                .filter(function (t) { return t.key; });
+            // Full key->name map so owning-team badges resolve for ANY team a doc
+            // might belong to (incl. shared / instance-wide-visible docs), not just
+            // the viewer's own memberships.
+            res.locals.teamNames = map;
+            if (Array.isArray(req.user.teams) && req.user.teams.length) {
+                res.locals.userTeams = req.user.teams
+                    .map(function (t) { return { key: t.team, name: map[t.team] || t.team }; })
+                    .filter(function (t) { return t.key; });
+            }
         }
     } catch (e) {
         // On any lookup failure, leave the switcher empty rather than break the page.

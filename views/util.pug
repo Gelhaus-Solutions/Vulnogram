@@ -87,6 +87,10 @@ mixin hyperVal(obj, name)
                 +hyperCVSS(obj, name)
             when 'scopes'
                 +hyperscopes(obj, name)
+            when 'team'
+                if value
+                    - var teamLabel = (typeof teamNames !== 'undefined' && teamNames && teamNames[value]) ? teamNames[value] : value
+                    span.tag.rnd.vgi-user(title="Owning team: " + value)= teamLabel
             default
                 if fields && fields[name]
                     - var cls = fields[name].class ? fields[name].class : '';

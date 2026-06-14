@@ -662,3 +662,48 @@ mixin mitre(cve)
                     td
                         b YYYYMMDD
                     td.ltgreybackground Disclaimer: The entry creation date may reflect when the CVE-ID was allocated or reserved, and does not necessarily indicate when this vulnerability was discovered, shared with the affected vendor, publicly disclosed, or updated in CVE.
+
+//- Read-only reference rendering of a native NVD 2.0 record ({cve:{...}}), shown
+//- in the editor's "NVD Reference" tab. Reuses +cvssList/+mpara from this file.
+mixin nvdref(doc)
+    - var cve = (doc && doc.cve) ? doc.cve : {}
+    .pad
+        h2.lbl.vgi-data NVD: #{cve.id || ''}
+        if cve.published || cve.lastModified
+            p.sml.tgrey Published #{cve.published || '—'} · Last modified #{cve.lastModified || '—'}
+        //- Flatten NVD's per-version metric arrays into the cvssList shape.
+        - var nvdCvss = []
+        - var order = ['cvssMetricV40', 'cvssMetricV31', 'cvssMetricV30', 'cvssMetricV2']
+        if cve.metrics
+            each mkey in order
+                if Array.isArray(cve.metrics[mkey])
+                    each m in cve.metrics[mkey]
+                        if m && m.cvssData
+                            - nvdCvss.push(m.cvssData)
+        if nvdCvss.length
+            h3 CVSS
+            +cvssList(nvdCvss)
+        else
+            p.tgrey No CVSS metrics in NVD.
+        if cve.weaknesses && cve.weaknesses.length
+            h3 CWE
+            ul
+                each w in cve.weaknesses
+                    if w && Array.isArray(w.description)
+                        each d in w.description
+                            li
+                                = d.value
+                                if w.type
+                                    span.sml.tgrey  (#{w.type})
+        if cve.descriptions && cve.descriptions.length
+            h3 Description
+            +mpara(cve.descriptions)
+        if cve.references && cve.references.length
+            h3 References
+            ul
+                each ref in cve.references
+                    if ref && ref.url
+                        li
+                            a(target="_blank", rel="noopener", href=ref.url)= ref.url
+                            if ref.tags && ref.tags.length
+                                span.sml.tgrey  [#{ref.tags.join(', ')}]

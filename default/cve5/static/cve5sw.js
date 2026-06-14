@@ -21,6 +21,13 @@ const cacheURL = '/creds';
 // can auto-restore a session across timeouts and page reloads. The key stays
 // encrypted at rest with the per-user RSA key and never leaves the worker.
 const rememberCacheURL = (org, user) => '/creds-remember/' + encodeURIComponent(org) + '/' + encodeURIComponent(user);
+// Remembered keys expire after this long; an expired entry is treated as absent
+// (and deleted) on the next read so a stale key can't silently auto-login forever.
+// Entries written before this version have no rememberedAt and never expire.
+const REMEMBER_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+function isRememberExpired(result) {
+    return !!(result && result.rememberedAt && (Date.now() - result.rememberedAt > REMEMBER_TTL_MS));
+}
 
 destroySession = () => {
     if ('creds' in storage) {
@@ -55,7 +62,8 @@ setCredentials = (e) => {
                         caches.open(cacheName).then(function (cache) {
                             cache.put(cacheURL, new Response(JSON.stringify(f)));
                             if (remember) {
-                                cache.put(rememberCacheURL(f.org, f.user), new Response(JSON.stringify(f)));
+                                let rf = { user: f.user, org: f.org, keyURL: f.keyURL, rememberedAt: Date.now() };
+                                cache.put(rememberCacheURL(f.org, f.user), new Response(JSON.stringify(rf)));
                             }
                         });
                         setSessionTimer();
@@ -72,6 +80,10 @@ loginRemembered = async (e) => {
         let resp = await cache.match(rememberCacheURL(org, user));
         if (!resp) { return clientReply(e, { error: "NO_REMEMBER" }); }
         let result = await resp.json();
+        if (isRememberExpired(result)) {
+            await cache.delete(rememberCacheURL(org, user));
+            return clientReply(e, { error: "NO_REMEMBER" });
+        }
         let ekey = await check_create_key(result.user);
         let encBuffer = URItoarrayBuffer(result.keyURL);
         let rawKey = await decryptMessage(encBuffer, ekey.privateKey);
@@ -90,10 +102,45 @@ hasRemembered = async (e) => {
     try {
         let cache = await caches.open(cacheName);
         let resp = await cache.match(rememberCacheURL(e.data.org, e.data.user));
+        if (resp) {
+            let result = await resp.json();
+            if (isRememberExpired(result)) {
+                await cache.delete(rememberCacheURL(e.data.org, e.data.user));
+                return clientReply(e, { remembered: false });
+            }
+        }
         clientReply(e, { remembered: !!resp });
     } catch (err) {
         clientReply(e, { remembered: false });
     }
+};
+
+// List saved logins that have a (non-expired) remembered key on THIS device.
+// Returns only {org, user, rememberedAt} — never any key material.
+listRemembered = async (e) => {
+    let out = [];
+    try {
+        let cache = await caches.open(cacheName);
+        let keys = await cache.keys();
+        for (let req of keys) {
+            let path;
+            try { path = new URL(req.url).pathname; } catch (err) { continue; }
+            if (path.indexOf('/creds-remember/') !== 0) { continue; }
+            let parts = path.substring('/creds-remember/'.length).split('/');
+            if (parts.length < 2) { continue; }
+            let entry = { org: decodeURIComponent(parts[0]), user: decodeURIComponent(parts[1]), rememberedAt: null };
+            try {
+                let resp = await cache.match(req);
+                if (resp) {
+                    let result = await resp.json();
+                    if (isRememberExpired(result)) { await cache.delete(req); continue; }
+                    entry.rememberedAt = result.rememberedAt || null;
+                }
+            } catch (err) { /* skip a single unreadable entry */ }
+            out.push(entry);
+        }
+    } catch (err) { /* ignore */ }
+    clientReply(e, { entries: out });
 };
 
 forgetRemembered = async (e) => {
@@ -222,6 +269,9 @@ self.onmessage = e => {
             break;
         case 'hasRemembered':
             hasRemembered(e);
+            break;
+        case 'listRemembered':
+            listRemembered(e);
             break;
         case 'forget':
             forgetRemembered(e);

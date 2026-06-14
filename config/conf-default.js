@@ -37,7 +37,26 @@ module.exports = {
         intervalHours: Number(process.env.NVD_SYNC_INTERVAL_HOURS) || 12,
         backfillOnEmpty: process.env.NVD_SYNC_BACKFILL !== 'false', // bulk-load all years on first run
         source: process.env.NVD_SYNC_SOURCE || 'mirror',           // 'mirror' (keyless) or 'api'
-        apiKey: process.env.NVD_API_KEY || ''                      // optional NVD API key
+        apiKey: process.env.NVD_API_KEY || '',                     // optional NVD API key
+        pruneOlderThanYears: Number(process.env.NVD_SYNC_PRUNE_YEARS) || 0 // opt-in cleanup after sync; 0 = keep all
+    },
+    // Workflow notifications (opt-in). On a CVE internal-workflow stage change,
+    // email watchers + assignees and/or POST a JSON payload to a webhook.
+    // Everything defaults OFF; email requires the optional `nodemailer` dependency.
+    notifications: {
+        enabled: process.env.VULNOGRAM_NOTIFY === 'true',
+        baseURL: process.env.VULNOGRAM_BASE_URL || '',
+        events: { stageChange: true, comment: false },
+        email: {
+            enabled: false,
+            from: '',
+            transport: { host: '', port: 587, secure: false, auth: { user: '', pass: '' } }
+        },
+        webhook: {
+            enabled: false,
+            url: '',
+            secret: ''
+        }
     },
 
 

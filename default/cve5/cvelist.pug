@@ -176,7 +176,7 @@ mixin portal
     div#cveList.gap
 
 mixin userstats
-    details.popup#userStatsPopup.popup(ontoggle="if(this.open && (u = document.getElementById('userListPopup'))) u.open = false;")
+    details.popup#userStatsPopup.popup(ontoggle="if(this.open){ var u = document.getElementById('userListPopup'); if(u) u.open = false; if(typeof cveLoadRememberedKeys === 'function') cveLoadRememberedKeys(); }")
         summary.fbn.vgi-user=((userInfo && userInfo.name && userInfo.name.first) ? userInfo.name.first : userInfo.username)
             |  ▼ 
         dl.pop.wht.bor.rnd.shd.pad
@@ -194,8 +194,12 @@ mixin userstats
                 b=org ? org.name : 'undefined'
             dt ShortName:  
                 b= org ? org.short_name : 'undefined'
-            dt Role:  
+            dt Role:
                 b= org && org.authority ? org.authority.active_roles : 'undefined'
+            hr.bort
+            dt Remembered API keys (this device):
+            div#cpRememberedList.sml.tgrey Loading…
+            p.sml.tgrey Stored encrypted in this browser only — never on the server.
             hr.bort
             span.vgi-import.fbn(onclick="cveSwitchLogin()") Switch login
             |

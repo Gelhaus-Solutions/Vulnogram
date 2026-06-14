@@ -150,7 +150,7 @@ block prepend bannerItemsLeft
         form.vg-team-switch.nobr.indent(action="/users/active-team", method="POST", style="display:inline-flex;align-items:center;")
             input(type="hidden", name="_csrf", value=csrfToken)
             label.lbl.vgi-user(style="margin-right:0.3em;") Team
-            select.bor.txt(name="team", title="Switch the team whose CVEs you are viewing", onchange="this.form.submit()")
+            select.bor.txt(name="team", title="Switch the team whose CVEs you are viewing", onchange="vgTeamSwitch(this.value)")
                 option(value="*", selected=(!activeTeam)) All my teams
                 each t in userTeams
                     option(value=t.key, selected=(activeTeam === t.key))= t.name
@@ -176,14 +176,16 @@ block append bannerItemsLeft
   
 block facetBanner
     include util.pug
-    +facetChart(facet, query, tfacet)
+    #vgFacetRegion
+        +facetChart(facet, query, tfacet)
 
 block error
     if subtitle
         b.subtitle=subtitle
 
 block info
-    +paginate
+    #vgInfoRegion(style="display:contents")
+        +paginate
 
 block append head
     if !min
@@ -192,12 +194,49 @@ block append head
 block append scripts
     script.
         var csrfToken = !{JSON.stringify(csrfToken)};
+        // AJAX team switch: update the session's active team, then refresh the
+        // facets, count and list in place instead of a full-page reload. Falls
+        // back to a normal form submit on any error.
+        async function vgTeamSwitch(team) {
+            var region = document.getElementById('vgListRegion');
+            try {
+                if (region) { region.style.opacity = '0.5'; }
+                var resp = await fetch('/users/active-team', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Accept': 'application/json',
+                        'CSRF-Token': csrfToken
+                    },
+                    body: 'team=' + encodeURIComponent(team) + '&_csrf=' + encodeURIComponent(csrfToken)
+                });
+                if (!resp.ok) { throw new Error('switch failed'); }
+                var page = await fetch(window.location.href, { credentials: 'include' });
+                if (!page.ok) { throw new Error('reload failed'); }
+                var doc = new DOMParser().parseFromString(await page.text(), 'text/html');
+                ['vgFacetRegion', 'vgInfoRegion', 'vgListRegion'].forEach(function (rid) {
+                    var cur = document.getElementById(rid);
+                    var fresh = doc.getElementById(rid);
+                    if (cur && fresh) { cur.innerHTML = fresh.innerHTML; }
+                });
+                if (region) { region.style.opacity = ''; }
+                if (typeof Tablesort === 'function') {
+                    var tables = document.getElementsByClassName('sortable');
+                    for (var i = 0; i < tables.length; i++) { new Tablesort(tables[i]); }
+                }
+            } catch (e) {
+                var sel = document.querySelector('.vg-team-switch select[name="team"]');
+                if (sel && sel.form) { sel.form.submit(); } else { window.location.reload(); }
+            }
+        }
     script(type="module")
         include ../src/js/edit/feedback.js
 
 block content
     include util.pug
-    .tabletop
-        +bulkTable(docs, columns, 'vgListTable')
-        if pages == 1
-            +tablesort
+    #vgListRegion
+        .tabletop
+            +bulkTable(docs, columns, 'vgListTable')
+            if pages == 1
+                +tablesort

@@ -39,7 +39,8 @@ module.exports = {
         intervalHours: Number(process.env.NVD_SYNC_INTERVAL_HOURS) || 12,
         backfillOnEmpty: process.env.NVD_SYNC_BACKFILL !== 'false', // bulk-load all years on first run
         source: process.env.NVD_SYNC_SOURCE || 'mirror',           // 'mirror' (keyless, 8-day feed) or 'api'
-        apiKey: process.env.NVD_API_KEY || ''                      // optional; raises NVD API rate limits
+        apiKey: process.env.NVD_API_KEY || '',                     // optional; raises NVD API rate limits
+        pruneOlderThanYears: Number(process.env.NVD_SYNC_PRUNE_YEARS) || 0 // opt-in cleanup after sync; 0 = keep all
     },
     realtime: {
         enabled: process.env.VULNOGRAM_REALTIME !== 'false',
@@ -49,6 +50,24 @@ module.exports = {
         rateLimit: {
             windowMs: 1000,
             max: 60
+        }
+    },
+    // Workflow notifications (opt-in). On a CVE internal-workflow stage change,
+    // email watchers + assignees and/or POST a JSON payload to a webhook.
+    // Everything defaults OFF; email requires the optional `nodemailer` dependency.
+    notifications: {
+        enabled: process.env.VULNOGRAM_NOTIFY === 'true',
+        baseURL: process.env.VULNOGRAM_BASE_URL || '',     // used to build links in notifications
+        events: { stageChange: true, comment: false },
+        email: {
+            enabled: false,
+            from: '',
+            transport: { host: '', port: 587, secure: false, auth: { user: '', pass: '' } }
+        },
+        webhook: {
+            enabled: false,
+            url: '',
+            secret: ''                                     // sent as X-Vulnogram-Signature when set
         }
     },
 

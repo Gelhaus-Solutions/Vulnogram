@@ -1987,19 +1987,41 @@ async function autoFetchMissingIfOwned(cveId) {
     if (!('serviceWorker' in navigator)) { return; }
     try { await ensurePortalBootstrap(); } catch (e) { return; }
 
+    // This runs automatically on page load, so feedback goes to the inline
+    // infoMsg/errMsg spans (non-blocking) rather than a modal dialog.
+    if (infoMsg) { infoMsg.textContent = 'Checking CVE Services for ' + cveId + '…'; }
+
     var ownership = null;
     try { ownership = await cnaResolveOwnership(cveId); } catch (e) { ownership = null; }
-    if (!ownership) { return; }
+    if (!ownership) {
+        // Not owned by any known login: leave the server's "ID not found" notice.
+        if (infoMsg) { infoMsg.textContent = ''; }
+        return;
+    }
 
     var authedAsOwner = !!(csCache.org && ownership.owner &&
         String(csCache.org).toLowerCase() === String(ownership.owner).toLowerCase());
-    if (ownership.state === 'RESERVED' && !authedAsOwner) { return; }
+    if (ownership.state === 'RESERVED' && !authedAsOwner) {
+        if (infoMsg) { infoMsg.textContent = ''; }
+        if (errMsg) { errMsg.textContent = cveId + ' is reserved by ' + ownership.owner + ' — log in as that CNA to load it from CVE Services.'; }
+        return;
+    }
 
     var record = null;
     try { record = await cveLoad(cveId); } catch (e) { record = null; }
     if (record && record.cveMetadata) {
         if (errMsg) { errMsg.textContent = ''; } // clear the stale "ID not found" flash
-        await saveFetchedRecordLocally(cveId, record);
+        // cveLoad() already populated the editor and set infoMsg to "Loaded …";
+        // append the save outcome so the user knows it was auto-fetched + stored.
+        var saved = await saveFetchedRecordLocally(cveId, record);
+        if (saved) {
+            if (infoMsg) { infoMsg.textContent = 'Auto-fetched ' + cveId + ' from CVE Services and saved locally.'; }
+        } else if (errMsg) {
+            errMsg.textContent = 'Fetched ' + cveId + ' from CVE Services, but saving it locally failed.';
+        }
+    } else {
+        if (infoMsg) { infoMsg.textContent = ''; }
+        if (errMsg) { errMsg.textContent = 'Could not auto-fetch ' + cveId + ' from CVE Services.'; }
     }
 }
 
@@ -2051,14 +2073,16 @@ async function cveRejectSelected() {
         try {
             var ret = await csClient.updateCveId(ids[j], 'REJECTED', csCache.org);
             if (ret && ret.updated && ret.updated.state === 'REJECTED') { ok++; }
-            else { failed.push(ids[j]); }
+            else { failed.push({ id: ids[j], reason: cvePublishErrorMessage(ret) }); }
         } catch (e) {
-            failed.push(ids[j]);
+            failed.push({ id: ids[j], reason: cvePublishErrorMessage(e) });
         }
     }
     if (m) {
         m.innerText = 'Rejected ' + ok + ' of ' + ids.length +
-            (failed.length ? ('. Failed: ' + failed.join(', ')) : '.');
+            (failed.length
+                ? ('. Failed: ' + failed.map(function (f) { return f.id + ' (' + f.reason + ')'; }).join('; '))
+                : '.');
     }
     await cveGetList();
 }
@@ -2117,6 +2141,61 @@ function cveAlert(title, message, timer) {
     } else {
         console.warn(text);
     }
+}
+
+// Remembered API keys live ONLY in this browser's service-worker cache (encrypted);
+// there is no server record. This lists what's stored on this device and lets the
+// user forget any entry. Built with DOM APIs (textContent) so org/user can't inject HTML.
+async function cveLoadRememberedKeys() {
+    var el = document.getElementById('cpRememberedList');
+    if (!el || typeof csClient === 'undefined' || !csClient || typeof csClient.listRemembered !== 'function') { return; }
+    try {
+        var res = await csClient.listRemembered();
+        var entries = (res && Array.isArray(res.entries)) ? res.entries : [];
+        el.textContent = '';
+        if (!entries.length) {
+            el.textContent = 'None on this device.';
+            return;
+        }
+        entries.forEach(function (en) {
+            var org = en.org || '';
+            var user = en.user || '';
+            var row = document.createElement('div');
+            row.className = 'row nobr';
+            var label = document.createElement('span');
+            var b = document.createElement('b');
+            b.textContent = org;
+            label.appendChild(b);
+            label.appendChild(document.createTextNode(' / ' + user + ' '));
+            if (en.rememberedAt) {
+                var dt = document.createElement('span');
+                dt.className = 'sml tgrey';
+                dt.textContent = '(' + new Date(en.rememberedAt).toLocaleDateString() + ') ';
+                label.appendChild(dt);
+            }
+            row.appendChild(label);
+            var btn = document.createElement('a');
+            btn.className = 'fbn vgi-x';
+            btn.title = 'Forget on this device';
+            btn.style.cursor = 'pointer';
+            btn.textContent = 'Forget';
+            btn.addEventListener('click', function () { cveForgetRemembered(org, user); });
+            row.appendChild(btn);
+            el.appendChild(row);
+        });
+    } catch (e) {
+        el.textContent = 'Could not list remembered keys.';
+    }
+}
+
+async function cveForgetRemembered(org, user) {
+    if (!window.confirm('Forget the remembered API key for ' + org + ' / ' + user + ' on this device?')) { return; }
+    try {
+        if (typeof csClient !== 'undefined' && csClient && typeof csClient.forgetKey === 'function') {
+            await csClient.forgetKey(org, user);
+        }
+    } catch (e) { /* ignore */ }
+    cveLoadRememberedKeys();
 }
 
 function cveCloneDoc(doc) {

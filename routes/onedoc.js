@@ -10,6 +10,7 @@ const docAccess = require('../lib/doc-access');
 const rbac = require('../lib/rbac');
 const Team = require('../models/team');
 const workflow = require('../lib/cna-workflow');
+const notify = require('../lib/notify');
 
 const {
     check,
@@ -373,6 +374,12 @@ module.exports = function (Document, opts) {
                 } catch (e) {
                     // workflow audit is non-fatal
                 }
+                // Best-effort notify watchers/assignees of the stage change. Fire-and-forget
+                // (not awaited) and self-contained error handling, so it never blocks/breaks the save.
+                notify.sendStageChange(
+                    { id: inputID, team: targetDoc.team, watchers: targetDoc.watchers, body: req.body },
+                    fromState, toState, req.user, wfTeam
+                ).catch(function (e) { console.log('notify stage change failed: ' + (e && e.message ? e.message : e)); });
             }
             if (renaming) {
                 res.json({
@@ -565,13 +572,6 @@ module.exports = function (Document, opts) {
 
     // Get document chage history (JSON patches)
     router.get('/log/:id', ensureRouteID, [checkID], function (req, res) {
-        getSubDocs(History, req.params.id).then(r => {
-            res.json(r);
-        });
-    });
-
-    // Get document comments
-    router.get('/comment/:id', ensureRouteID, [checkID], function (req, res) {
         getSubDocs(History, req.params.id).then(r => {
             res.json(r);
         });

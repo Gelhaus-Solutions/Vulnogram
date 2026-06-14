@@ -37,12 +37,20 @@ function hidepopups() {
 async function rejectRecord() {
     var id = getDocID();
     if (window.confirm('Do you want to reject ' + id + '? All vulnerability details will be removed.')) {
-        loadJSON({
+        var current = (typeof mainTabGroup !== 'undefined' && mainTabGroup) ? mainTabGroup.getValue() : null;
+        var skeleton = {
             cveMetadata: {
                 cveId: id,
                 state: 'REJECTED'
             }
-        }, id, 'Rejcting ' + id, rejectEditorOption);
+        };
+        // Carry the internal editorial workflow (CNA_private) across the reject so a
+        // rejected record can still move through draft/review/etc. It is stripped
+        // before any upload to CVE Services (reduceJSON), so it never leaks.
+        if (current && current.CNA_private) {
+            skeleton.CNA_private = current.CNA_private;
+        }
+        loadJSON(skeleton, id, 'Rejecting ' + id, rejectEditorOption);
         mainTabGroup.change(0);
     }
 }
@@ -98,6 +106,37 @@ async function draftEmail(event, link, renderId) {
 };
 
 var additionalTabs = {
+    nvdrefTab: {
+        title: 'NVD Reference',
+        // Read-only viewer: no getValue/validate, so the tab engine never writes
+        // this tab's content back into the edited document. Fetches the matching
+        // record from the local NVD mirror via GET /nvd/json/:id (auth-gated, full
+        // doc, no field-allowlist concerns) and renders it lazily on tab switch.
+        setValue: async function (j) {
+            var el = document.getElementById('nvdRefRender');
+            if (!el) { return; }
+            var id = textUtil.deep_value(j, 'cveMetadata.cveId');
+            if (!id || !/^CVE-\d{4}-\d{4,}$/.test(id)) {
+                el.innerHTML = '<p class="tgrey">Enter a valid CVE ID to see NVD reference data.</p>';
+                return;
+            }
+            try {
+                var resp = await fetch('/nvd/json/' + encodeURIComponent(id), {
+                    credentials: 'include',
+                    headers: { 'Accept': 'application/json' }
+                });
+                var rows = resp.ok ? await resp.json() : [];
+                var rec = (Array.isArray(rows) && rows.length) ? rows[0] : null;
+                if (rec && rec.cve) {
+                    el.innerHTML = pugRender({ renderTemplate: 'nvdref', doc: rec });
+                } else {
+                    el.innerHTML = '<p class="tgrey">No NVD data for ' + id + ' in the local mirror yet.</p>';
+                }
+            } catch (e) {
+                el.innerHTML = '<p class="tred">Could not load NVD data.</p>';
+            }
+        }
+    },
     advisoryTab: {
         title: 'Advisory',
         setValue: async function (j) {

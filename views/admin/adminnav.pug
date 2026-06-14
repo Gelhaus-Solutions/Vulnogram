@@ -9,3 +9,5 @@
     a.fbn.vgi-king(href="/admin/roles") Roles
   if can && can('team.manage')
     a.fbn.vgi-org(href="/admin/teams") Teams
+  if can && can('nvd.manage')
+    a.fbn.vgi-data(href="/admin/nvd") NVD sync
