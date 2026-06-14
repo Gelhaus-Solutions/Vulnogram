@@ -38,7 +38,9 @@ block draftsSummaryActions
         a#draftPublishOpenBtn.right.sfe.fbn.vgi-export(href="#" title="Manage and publish cached drafts" onclick="event.stopPropagation();return cveOpenDraftPublishDialog(event);") Manage
 
 block append sidebarSections
-    a#cvePortalNav.lbl.vgi-org(href="#", onclick="return showCvePortal(event);") CVE Portal
+    a#cvePortalNav.lbl.vgi-org(href="#", onclick="return showCvePortal(event);") CVE CNA Portal
+    a#cveRootPortalNav.lbl.vgi-king.hid(href="#", onclick="return showCveRootPortal(event);", title="Root CNA management") CVE Root Portal
+    a#cveSecretariatPortalNav.lbl.vgi-cog.hid(href="#", onclick="return showCveSecretariatPortal(event);", title="Secretariat management") CVE Secretariat Portal
 
 block append outputButtons
     //- a.vgi-download.fbn(type="button",oncontextmenu='saveCSAF(event, this);',onclick='saveCSAF(event, this);',target="_blank",title="Download CSAF") CSAF
@@ -235,6 +237,16 @@ block prepend content
             b.lbl.vgi-org CVE CNA Portal
             a.right.rbtn.vgi-x(title="Close CVE Portal" onclick="return closeCvePortal(event);")
         #port
+    dialog.dlg.bor.rndx.shd#cveRootPortalDialog
+        header.ban.sec.pad
+            b.lbl.vgi-king CVE Root Portal
+            a.right.rbtn.vgi-x(title="Close Root Portal" onclick="return closeCveRootPortal(event);")
+        #rootPort
+    dialog.dlg.bor.rndx.shd#cveSecretariatPortalDialog
+        header.ban.sec.pad
+            b.lbl.vgi-cog CVE Secretariat Portal
+            a.right.rbtn.vgi-x(title="Close Secretariat Portal" onclick="return closeCveSecretariatPortal(event);")
+        #secPort
 
 mixin cpeNameOverrideDialog
     dialog.dlg.bor.rndx.shd#cpeNameOverrideDialog

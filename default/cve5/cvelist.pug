@@ -408,6 +408,23 @@ mixin autoText
                 = relevantList.join('; ')
                 |.
 
+//- Shell for the Root / Secretariat management portals. The body container
+//- (#{pfx}MgmtBody) is filled in by portal.js after the shell renders.
+mixin mgmtPortalShell
+    header.pad.ban
+        .left.flx
+            label.lbl(class=scopeIcon)
+                b=scopeTitle
+        .flx
+            if orgInfo
+                span.lbl.vgi-org.nobr(title="Logged in org")= orgInfo.short_name
+                if orgInfo.authority && orgInfo.authority.active_roles
+                    span.sml.tgrey.nobr  (#{orgInfo.authority.active_roles.join(', ')})
+    .pad(id=pfx + 'MgmtStatus')
+    div(id=pfx + 'MgmtBody').gap
+        center.pad2
+            .spinner
+
 block red
     if ctemplate != undefined
         +#{ctemplate}

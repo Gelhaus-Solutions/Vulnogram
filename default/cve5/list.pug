@@ -16,7 +16,9 @@ block append scripts
     script(src='/' + schemaName + '/static/list-page.js')
 
 block append sidebarSections
-    a#cvePortalNav.lbl.vgi-org(href="#", onclick="return showCvePortal(event);") CVE Portal
+    a#cvePortalNav.lbl.vgi-org(href="#", onclick="return showCvePortal(event);") CVE CNA Portal
+    a#cveRootPortalNav.lbl.vgi-king.hid(href="#", onclick="return showCveRootPortal(event);", title="Root CNA management") CVE Root Portal
+    a#cveSecretariatPortalNav.lbl.vgi-cog.hid(href="#", onclick="return showCveSecretariatPortal(event);", title="Secretariat management") CVE Secretariat Portal
 
 block append content
     .pad
@@ -33,3 +35,13 @@ block append content
             b.lbl.vgi-org CVE CNA Portal
             a.right.rbtn.vgi-x(title="Close CVE Portal" onclick="return closeCvePortal(event);")
         #port
+    dialog.dlg.bor.rndx.shd#cveRootPortalDialog
+        header.ban.sec.pad
+            b.lbl.vgi-king CVE Root Portal
+            a.right.rbtn.vgi-x(title="Close Root Portal" onclick="return closeCveRootPortal(event);")
+        #rootPort
+    dialog.dlg.bor.rndx.shd#cveSecretariatPortalDialog
+        header.ban.sec.pad
+            b.lbl.vgi-cog CVE Secretariat Portal
+            a.right.rbtn.vgi-x(title="Close Secretariat Portal" onclick="return closeCveSecretariatPortal(event);")
+        #secPort

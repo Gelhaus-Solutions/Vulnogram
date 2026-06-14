@@ -70,6 +70,39 @@ if (document.readyState === 'loading') {
     initPortalNavConnectionState();
 }
 
+// ---- Root / Secretariat role detection -----------------------------------
+// CVE Services org roles: 'CNA', 'ADP', 'ROOT_CNA', 'SECRETARIAT'. A Secretariat
+// org is also a Root, so it sees both portals.
+function getOrgActiveRoles(orgInfo) {
+    if (orgInfo && orgInfo.authority && Array.isArray(orgInfo.authority.active_roles)) {
+        return orgInfo.authority.active_roles.map(function (r) { return String(r).toUpperCase(); });
+    }
+    return [];
+}
+
+function orgIsSecretariat(orgInfo) {
+    return getOrgActiveRoles(orgInfo).indexOf('SECRETARIAT') >= 0;
+}
+
+function orgIsRoot(orgInfo) {
+    var roles = getOrgActiveRoles(orgInfo);
+    return roles.indexOf('SECRETARIAT') >= 0 || roles.indexOf('ROOT_CNA') >= 0 || roles.indexOf('ROOT') >= 0;
+}
+
+function applyPortalRoleVisibility(orgInfo) {
+    var rootNav = document.getElementById('cveRootPortalNav');
+    var secNav = document.getElementById('cveSecretariatPortalNav');
+    if (rootNav) { rootNav.classList.toggle('hid', !orgIsRoot(orgInfo)); }
+    if (secNav) { secNav.classList.toggle('hid', !orgIsSecretariat(orgInfo)); }
+}
+
+function hidePortalRoleButtons() {
+    var rootNav = document.getElementById('cveRootPortalNav');
+    var secNav = document.getElementById('cveSecretariatPortalNav');
+    if (rootNav) { rootNav.classList.add('hid'); }
+    if (secNav) { secNav.classList.add('hid'); }
+}
+
 function isPortalAuthError(e) {
     const err = e && e.error ? e.error : null;
     return err == 'NO_SESSION' || err == 'UNAUTHORIZED';
@@ -109,6 +142,7 @@ function clearPortalSessionCache() {
     };
     window.localStorage.removeItem('cveApi');
     setPortalNavConnectionState(false);
+    hidePortalRoleButtons();
 }
 
 async function hasActivePortalSession(url) {
@@ -126,7 +160,9 @@ async function hasActivePortalSession(url) {
     }
     // Verify session against CVE Services, not just cached SW credentials.
     try {
-        await csClient.getOrgInfo();
+        var orgInfo = await csClient.getOrgInfo();
+        csCache.orgInfo = orgInfo;
+        applyPortalRoleVisibility(orgInfo);
         setPortalNavConnectionState(true);
         return true;
     } catch (e) {
@@ -245,6 +281,80 @@ function portalFocusEditor() {
     setPortalSidebarState(false);
     if (typeof (mainTabGroup) !== 'undefined') {
         mainTabGroup.change(0);
+    }
+}
+
+// ---- Root / Secretariat management portals --------------------------------
+var ROOT_PORTAL_SCOPE = {
+    key: 'root', dialogId: 'cveRootPortalDialog', containerId: 'rootPort',
+    pfx: 'root', title: 'CVE Root Portal', icon: 'vgi-king', roleLabel: 'Root'
+};
+var SEC_PORTAL_SCOPE = {
+    key: 'secretariat', dialogId: 'cveSecretariatPortalDialog', containerId: 'secPort',
+    pfx: 'sec', title: 'CVE Secretariat Portal', icon: 'vgi-cog', roleLabel: 'Secretariat'
+};
+
+function closeManagementPortal(dialogId, event) {
+    if (event && event.preventDefault) { event.preventDefault(); }
+    var dlg = document.getElementById(dialogId);
+    if (dlg && dlg.open) { dlg.close(); }
+    return false;
+}
+function closeCveRootPortal(event) { return closeManagementPortal('cveRootPortalDialog', event); }
+function closeCveSecretariatPortal(event) { return closeManagementPortal('cveSecretariatPortalDialog', event); }
+
+async function showCveManagementPortal(scope) {
+    var dlg = document.getElementById(scope.dialogId);
+    var container = document.getElementById(scope.containerId);
+    if (!dlg || !container) { return false; }
+    if (!dlg.open) { dlg.showModal(); }
+    var fb = new feedback(container, 'spinner');
+    try {
+        await ensurePortalBootstrap();
+        var hasSession = await hasActivePortalSession(csCache.url);
+        if (!hasSession) {
+            container.innerHTML = '<div class="pad2"><b class="tred">Please log in to the CVE CNA Portal first,</b> then reopen this portal.</div>';
+            return false;
+        }
+        var orgInfo = csCache.orgInfo || await csClient.getOrgInfo();
+        var allowed = scope.key === 'secretariat' ? orgIsSecretariat(orgInfo) : orgIsRoot(orgInfo);
+        if (!allowed) {
+            container.innerHTML = '<div class="pad2"><b class="tred">Your CVE Services org does not have the ' + scope.roleLabel + ' role.</b></div>';
+            return false;
+        }
+        container.innerHTML = cveRender({
+            ctemplate: 'mgmtPortalShell',
+            pfx: scope.pfx,
+            scopeTitle: scope.title,
+            scopeIcon: scope.icon,
+            orgInfo: orgInfo
+        });
+        await renderManagementPortal(scope, orgInfo);
+        return true;
+    } catch (e) {
+        portalErrorHandler(e);
+        return false;
+    } finally {
+        fb.cancel();
+    }
+}
+
+function showCveRootPortal(event) {
+    if (event && event.preventDefault) { event.preventDefault(); }
+    showCveManagementPortal(ROOT_PORTAL_SCOPE);
+    return false;
+}
+function showCveSecretariatPortal(event) {
+    if (event && event.preventDefault) { event.preventDefault(); }
+    showCveManagementPortal(SEC_PORTAL_SCOPE);
+    return false;
+}
+
+// Filled in by the next task; for now shows a placeholder in the shell body.
+async function renderManagementPortal(scope, orgInfo) {
+    var body = document.getElementById(scope.pfx + 'MgmtBody');
+    if (body) {
+        body.innerHTML = '<div class="pad2 tgrey">Management tools (orgs, users, quota, search) load here.</div>';
     }
 }
 
@@ -435,6 +545,8 @@ async function showPortalView(orgInfo, userInfo) {
         if (!orgInfo) {
             orgInfo = await csClient.getOrgInfo();
         }
+        csCache.orgInfo = orgInfo;
+        applyPortalRoleVisibility(orgInfo);
         if (!userInfo) {
             userInfo = await csClient.getOrgUser(csCache.user);
         }
