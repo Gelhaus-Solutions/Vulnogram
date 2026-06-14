@@ -1227,8 +1227,79 @@ async function cveAddUser(f) {
     }
 }
 
-async function cveOrgUpdate() {
-    cveShowError('To be done');
+// ---- Edit own org info (registry-only descriptive editor) -----------------
+// Registry support is cached per session. CVE Services < 2.8 (e.g. production
+// 2.6.4) has no registry routes, so this editor is unavailable there.
+var cveRegistrySupported = null;
+
+async function cveDetectRegistry() {
+    if (cveRegistrySupported !== null) {
+        return cveRegistrySupported;
+    }
+    try {
+        var org = await csClient.getOrgRegistry(csCache.org);
+        cveRegistrySupported = !!(org && !org.error && org.short_name);
+    } catch (e) {
+        cveRegistrySupported = false;
+    }
+    return cveRegistrySupported;
+}
+
+function splitLines(value) {
+    if (!value) { return []; }
+    return value.split(/\r?\n/).map(function (s) { return s.trim(); }).filter(Boolean);
+}
+
+async function cveEditOrgInfo() {
+    var dlg = document.getElementById('cveOrgInfoDialog');
+    var body = document.getElementById('cveOrgInfoBody');
+    if (!dlg || !body) { return; }
+    body.innerHTML = '<center class="pad2"><div class="spinner"></div></center>';
+    if (!dlg.open) { dlg.showModal(); }
+    try {
+        var ok = await cveDetectRegistry();
+        if (!ok) {
+            body.innerHTML = '<div class="pad2 tgrey">Editing organization info requires a CVE Services instance that supports the registry API (2.8+). This instance does not, so org details are managed by the Secretariat.</div>';
+            return;
+        }
+        var org = await csClient.getOrgRegistry(csCache.org);
+        if (!org || org.error) { body.innerHTML = '<div class="pad2 tred">Could not load organization info.</div>'; return; }
+        body.innerHTML = cveRender({ ctemplate: 'orgInfoEditForm', org: org });
+    } catch (e) {
+        body.innerHTML = '<div class="pad2 tred">' + (secErr ? secErr(e) : 'Error') + '</div>';
+    }
+}
+
+async function cveSaveOrgInfo(event, form, shortName) {
+    if (event && event.preventDefault) { event.preventDefault(); }
+    var status = document.getElementById('cveOrgInfoStatus');
+    try {
+        // The registry update validates the whole org, so echo the required
+        // identity/quota fields back unchanged alongside the edited fields.
+        var current = await csClient.getOrgRegistry(shortName);
+        var bodyOut = {
+            short_name: shortName,
+            authority: Array.isArray(current.authority) ? current.authority : [],
+            id_quota: (typeof current.id_quota === 'number') ? current.id_quota : (current.policies ? current.policies.id_quota : undefined),
+            contact_info: {
+                emails: splitLines(form.emails.value),
+                websites: splitLines(form.websites.value),
+                phone: form.phone.value.trim()
+            },
+            industry: form.industry.value.trim(),
+            disclosure_policy: form.disclosure_policy.value.trim(),
+            product_list: form.product_list.value.trim(),
+            charter_or_scope: form.charter_or_scope.value.trim(),
+            advisory_locations: splitLines(form.advisory_locations.value)
+        };
+        if (status) { status.innerText = 'Saving…'; status.className = 'pad tgrey'; }
+        var r = await csClient.updateOrgRegistry(shortName, bodyOut);
+        if (r && r.error) { if (status) { status.innerText = secErr(r); status.className = 'pad tred'; } return false; }
+        if (status) { status.innerText = (r && r.message) ? r.message : 'Saved.'; status.className = 'pad'; }
+    } catch (e) {
+        if (status) { status.innerText = secErr ? secErr(e) : 'Error'; status.className = 'pad tred'; }
+    }
+    return false;
 }
 
 async function cveRenderList(l, refreshEditor) {

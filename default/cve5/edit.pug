@@ -247,6 +247,11 @@ block prepend content
             b.lbl.vgi-cog CVE Secretariat Portal
             a.right.rbtn.vgi-x(title="Close Secretariat Portal" onclick="return closeCveSecretariatPortal(event);")
         #secPort
+    dialog.dlg.bor.rndx.shd#cveOrgInfoDialog
+        header.ban.sec.pad
+            b.lbl.vgi-org Edit organization info
+            a.right.rbtn.vgi-x(title="Close" onclick="this.closest('dialog').close();")
+        #cveOrgInfoBody
 
 mixin cpeNameOverrideDialog
     dialog.dlg.bor.rndx.shd#cpeNameOverrideDialog

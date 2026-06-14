@@ -259,6 +259,24 @@
             return this._middleware.put(`org/${shortName}/user/${username}/reset_secret`);
         }
 
+        // ---- Registry API (CVE Services >= 2.8) ------------------------------
+        // The registry routes expose richer org fields (long_name, contact_info,
+        // disclosure_policy, advisory_locations, ...). updateOrgRegistry takes a
+        // JSON BODY that must validate (short_name + authority + id_quota).
+        // Org admins may edit non-secretariat fields on their own org here; some
+        // fields require Secretariat joint-approval (handled server-side).
+
+        // GET /registry/org/{shortName} — registry-shaped org, or an error on
+        // instances that don't support the registry (used for capability probe).
+        getOrgRegistry(shortName) {
+            return this._middleware.get(`registry/org/${shortName}`);
+        }
+
+        // PUT /registry/org/{shortName} — body-encoded registry update.
+        updateOrgRegistry(shortName, orgBody) {
+            return this._middleware.put(`registry/org/${shortName}`, undefined, orgBody);
+        }
+
         createOrgUser(userInfo) {
             return this._middleware.orgName
                 .then(orgName =>

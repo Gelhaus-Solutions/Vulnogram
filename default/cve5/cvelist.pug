@@ -175,6 +175,9 @@ mixin userstats
             hr.bort
             span.vgi-edit.fbn(onclick="cveUserEdit(this)" u=userInfo.username, f=userInfo.name?userInfo.name.first:'', l=userInfo.name?userInfo.name.last:'', ac=userInfo.active, ad=userInfo.authority.active_roles.includes('ADMIN') title="Edit Info")
                 | Update my details
+            if userInfo.authority && userInfo.authority.active_roles && userInfo.authority.active_roles.includes('ADMIN')
+                span.vgi-org.fbn(onclick="cveEditOrgInfo()" title="Edit your organization's descriptive info")
+                    | Edit org info
             hr.bort
             dt Org:  
                 b=org ? org.name : 'undefined'
@@ -595,6 +598,40 @@ mixin secAddUserForm
             button.btn.sfe(type="submit") Create user
             |
             button.btn.vgi-x(type="button", onclick="document.getElementById('secAddUserSlot').innerHTML='';") Cancel
+
+//- Registry-only "edit own org" descriptive editor for org admins.
+mixin orgInfoEditForm
+    - var ci = (org && org.contact_info) ? org.contact_info : {}
+    form.gap.pad(onsubmit="return cveSaveOrgInfo(event, this, '"+org.short_name+"');")
+        p.tgrey Editing descriptive info for
+            b=org.short_name
+            | . Fields marked “approval” are submitted to the Secretariat for joint approval.
+        b.lbl.vgi-mail Contact info
+        .vflx
+            label.lbl(for="oiEmails") Emails (one per line)
+            textarea#oiEmails.bor.txt(name="emails", rows="2")=(ci.emails && ci.emails.length)?ci.emails.join('\n'):''
+            label.lbl(for="oiWebsites") Websites (one per line)
+            textarea#oiWebsites.bor.txt(name="websites", rows="2")=(ci.websites && ci.websites.length)?ci.websites.join('\n'):''
+            label.lbl(for="oiPhone") Phone
+            input#oiPhone.bor.txt(name="phone", value=ci.phone||'')
+            label.lbl(for="oiIndustry") Industry
+            input#oiIndustry.bor.txt(name="industry", value=org.industry||'')
+        hr.bort
+        b.lbl.vgi-text Program info
+        .vflx
+            label.lbl(for="oiDisclosure") Disclosure policy URL (approval)
+            input#oiDisclosure.bor.txt(name="disclosure_policy", value=org.disclosure_policy||'')
+            label.lbl(for="oiProducts") Product list URL (approval)
+            input#oiProducts.bor.txt(name="product_list", value=org.product_list||'')
+            label.lbl(for="oiCharter") Charter or scope (approval)
+            textarea#oiCharter.bor.txt(name="charter_or_scope", rows="2")=org.charter_or_scope||''
+            label.lbl(for="oiAdvisories") Advisory locations (one per line, approval)
+            textarea#oiAdvisories.bor.txt(name="advisory_locations", rows="2")=(org.advisory_locations && org.advisory_locations.length)?org.advisory_locations.join('\n'):''
+        .pad#cveOrgInfoStatus
+        .gap
+            button.btn.sfe(type="submit") Save
+            |
+            button.btn.vgi-x(type="button", onclick="this.closest('dialog').close();") Cancel
 
 mixin rootPortalBody
     .pad2
