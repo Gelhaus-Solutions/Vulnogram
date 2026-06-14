@@ -648,6 +648,29 @@ async function secToggleActive(shortName, username, isActive) {
     }
 }
 
+// Program-wide CVE ID lookup (Secretariat). GET /cve-id/{id} resolves any org's
+// ID for a secretariat, returning its state and owning CNA.
+async function secCveLookup() {
+    var input = document.getElementById('secCveSearch');
+    var out = document.getElementById('secCveResult');
+    if (!input || !out) { return; }
+    var id = normalizeCveIdQuery(input.value);
+    if (!id) { out.innerHTML = '<i class="tgrey">Enter a CVE ID such as CVE-' + currentYear + '-1234.</i>'; return; }
+    var fb = new feedback(out, 'spinner');
+    try {
+        var rec = await csClient.getCveId(id);
+        if (!rec || rec.error || !rec.cve_id) {
+            out.innerHTML = '<i class="tred">' + id + ' not found.</i>';
+            return;
+        }
+        out.innerHTML = cveRender({ ctemplate: 'secCveResult', rec: rec });
+    } catch (e) {
+        out.innerHTML = '<i class="tred">' + (secErr ? secErr(e) : (id + ' not found.')) + '</i>';
+    } finally {
+        fb.cancel();
+    }
+}
+
 function getStoredPortalSettings() {
     let portalType = window.localStorage.getItem('portalType');
     let portalUrl = window.localStorage.getItem('portalUrl');
@@ -1725,6 +1748,40 @@ async function cveReject(elem, event) {
         }
     }
 }
+function cveToggleSelectAll(el) {
+    var boxes = document.querySelectorAll('#cveListTable .cveSelect');
+    for (var i = 0; i < boxes.length; i++) { boxes[i].checked = el.checked; }
+}
+
+// Bulk-reject every selected RESERVED CVE ID (single confirmation).
+async function cveRejectSelected() {
+    var boxes = document.querySelectorAll('#cveListTable .cveSelect:checked');
+    var ids = [];
+    for (var i = 0; i < boxes.length; i++) {
+        var id = boxes[i].getAttribute('data');
+        if (id) { ids.push(id); }
+    }
+    if (!ids.length) { cveShowError('Select at least one reserved CVE ID to reject.'); return; }
+    if (!window.confirm('Reject ' + ids.length + ' CVE ID(s)? This cannot be undone!\n\n' + ids.join(', '))) { return; }
+    var m = document.getElementById('cveStatusMessage');
+    var ok = 0, failed = [];
+    for (var j = 0; j < ids.length; j++) {
+        if (m) { m.innerText = 'Rejecting ' + (j + 1) + '/' + ids.length + ' (' + ids[j] + ')…'; }
+        try {
+            var ret = await csClient.updateCveId(ids[j], 'REJECTED', csCache.org);
+            if (ret && ret.updated && ret.updated.state === 'REJECTED') { ok++; }
+            else { failed.push(ids[j]); }
+        } catch (e) {
+            failed.push(ids[j]);
+        }
+    }
+    if (m) {
+        m.innerText = 'Rejected ' + ok + ' of ' + ids.length +
+            (failed.length ? ('. Failed: ' + failed.join(', ')) : '.');
+    }
+    await cveGetList();
+}
+
 function transatePath(p) {
     if(p) {
         p = p.replace("/cnaContainer", "root.containers.cna");

@@ -84,7 +84,12 @@ mixin portal
                                     button.rbtn.right.vgi-x(onclick="this.closest('details').removeAttribute('open')")     
                                 dt
                                     button.btn.vgi-magic(onclick='cveReserveAndRender(0, 10)'  style="min-width:6em") Reserve 10
-                                dt 
+                                dt
+                                    .flx
+                                        button.btn.vgi-magic(onclick="cveReserveAndRender(0, (parseInt(document.getElementById('reserveAmount').value,10)||1))" style="min-width:6em") Reserve
+                                        |
+                                        input#reserveAmount.lbl.txt(type="number", min="1", max="50", value="25", onclick="event.stopPropagation();", title="1–50 IDs", style="width:5em")
+                                dt
                                     button.btn.vgi-magic(onclick='cveReserveAndRender(1)') Reserve one for 
                                         = y+1
                                 dt
@@ -279,9 +284,16 @@ mixin listIds
         - var stateIcons = {'RESERVED':'vgi-tag', 'PUBLISHED':'vgi-globe', 'REJECTED':'vgi-del', 'PUBLIC':'vgi-globe'}
         - var canInlineLoad = (typeof inlineLoad === 'boolean') ? inlineLoad : true
         - var docBase = docPathBase ? docPathBase : '/cve5/'
+        - var hasReserved = editable && cveIds.some(function(c){ return c.state === 'RESERVED'; })
+        if hasReserved
+            .gap
+                button.fbn.vgi-del#cveRejectSelectedBtn(onclick="cveRejectSelected()") Reject selected
         table#cveListTable.vtbl.sortable
             thead
                 tr
+                    if hasReserved
+                        th(data-sort-method='none')
+                            input(type="checkbox", title="Select all reserved", onclick="cveToggleSelectAll(this)")
                     th ID
                     th Requester
                     th(aria-sort="ascending") Created
@@ -290,6 +302,10 @@ mixin listIds
             tbody
                 each c in cveIds
                     tr(data=c.state)
+                        if hasReserved
+                            td
+                                if c.state == 'RESERVED'
+                                    input.cveSelect(type="checkbox", data=c.cve_id)
                         td
                             if editable
                                 if canInlineLoad
@@ -457,7 +473,40 @@ mixin secPortalBody
             div.lbl#secCurrentPage 1
             button.lbl#secNextPage(onclick="secPaginate(1)") &#8250;
     hr.bort
+    b.lbl.vgi-cve Find a CVE ID (program-wide)
+    .flx.gap
+        span.txt-icon-wrap
+            span.txt-input-icon.vgi-search
+            input#secCveSearch.bor.txt.txt-has-icon(type="search", placeholder="CVE-YYYY-NNNN", autocomplete="off", onkeydown="if(event.key==='Enter'){event.preventDefault();secCveLookup();return false;}")
+        button.btn.vgi-search(onclick="secCveLookup()") Find
+    #secCveResult.gap
+    hr.bort
     #secOrgDetail.gap
+
+mixin secCveResult
+    if rec
+        table.vtbl
+            tbody
+                tr
+                    td CVE ID
+                    td
+                        b=rec.cve_id
+                        if rec.state != 'RESERVED'
+                            |
+                            a.vgi-ext(href="https://www.cve.org/CVERecord?id="+rec.cve_id, target="_blank")
+                tr
+                    td State
+                    td=rec.state
+                tr
+                    td Owning CNA
+                    td= (rec.requested_by && rec.requested_by.cna) ? rec.requested_by.cna : (rec.owning_cna || '')
+                tr
+                    td Requested by
+                    td= (rec.requested_by && rec.requested_by.user) ? rec.requested_by.user : ''
+                if rec.reserved
+                    tr
+                        td Reserved
+                        td=rec.reserved
 
 mixin secOrgRows
     if orgs && orgs.length
