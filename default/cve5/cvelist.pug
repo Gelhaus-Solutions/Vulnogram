@@ -105,6 +105,17 @@ mixin portal
                                                 option(value=j selected=(reserveSelectedYear == String(j)))=j
                                                 - j--;
 
+        if idQuota
+            .flx#cveQuota(title="CVE ID quota for " + (org ? org.short_name : 'this org'))
+                span.lbl.vgi-tag.nobr
+                    span.tgrey Quota&nbsp;
+                    b=idQuota.id_quota
+                span.lbl.nobr
+                    span.tgrey reserved&nbsp;
+                    b=idQuota.total_reserved
+                span.lbl.nobr(class=(typeof idQuota.available === 'number' && idQuota.available <= 0) ? 'tred' : '')
+                    span.tgrey available&nbsp;
+                    b=idQuota.available
         .flx
             label#cveUser
                 +userstats

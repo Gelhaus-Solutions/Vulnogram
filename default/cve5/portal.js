@@ -438,6 +438,13 @@ async function showPortalView(orgInfo, userInfo) {
         if (!userInfo) {
             userInfo = await csClient.getOrgUser(csCache.user);
         }
+        // ID quota is informational — never block the portal if it fails.
+        var idQuota = null;
+        try {
+            idQuota = await csClient.getOrgIdQuota();
+        } catch (e) {
+            idQuota = null;
+        }
         document.getElementById('port').innerHTML = cveRender({
             portalType: csCache.portalType,
             portalURL: csCache.url,
@@ -447,7 +454,8 @@ async function showPortalView(orgInfo, userInfo) {
                 typeof currentYear !== 'undefined' ? (currentYear + '') : ((new Date()).getFullYear() + '')
             ),
             userInfo: userInfo,
-            org: orgInfo
+            org: orgInfo,
+            idQuota: idQuota
         });
         setPortalNavConnectionState(true);
         var button1 = document.getElementById('post1');
