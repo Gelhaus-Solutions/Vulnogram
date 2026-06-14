@@ -145,6 +145,16 @@ mixin distinctSummary(docs, columns)
 
 
 
+block prepend bannerItemsLeft
+    if userTeams && userTeams.length
+        form.vg-team-switch.nobr.indent(action="/users/active-team", method="POST", style="display:inline-flex;align-items:center;")
+            input(type="hidden", name="_csrf", value=csrfToken)
+            label.lbl.vgi-user(style="margin-right:0.3em;") Team
+            select.bor.txt(name="team", title="Switch the team whose CVEs you are viewing", onchange="this.form.submit()")
+                option(value="*", selected=(!activeTeam)) All my teams
+                each t in userTeams
+                    option(value=t.key, selected=(activeTeam === t.key))= t.name
+
 block append bannerItemsLeft
     if tfacet && tfacet.length && tfacet.length > 0
       each values, field in tfacet[0]

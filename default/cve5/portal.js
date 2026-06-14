@@ -147,6 +147,11 @@ function clearPortalSessionCache() {
     window.localStorage.removeItem('cveApi');
     setPortalNavConnectionState(false);
     hidePortalRoleButtons();
+    // Don't leave the previous login's recent CVE IDs on screen after the session
+    // is cleared — they belong to a different org.
+    if (typeof window !== 'undefined' && typeof window.setRecentCveEntries === 'function') {
+        window.setRecentCveEntries([], '');
+    }
 }
 
 async function hasActivePortalSession(url) {
@@ -829,6 +834,12 @@ async function cnaLoadProfiles() {
     }
 }
 function cnaProfileSelect(sel) {
+    // Switching saved logins must immediately drop the previously shown org's
+    // recent CVEs so the two logins' CVEs never appear mixed together. They are
+    // repopulated for the new org if/when the login below succeeds.
+    if (typeof window !== 'undefined' && typeof window.setRecentCveEntries === 'function') {
+        window.setRecentCveEntries([], '');
+    }
     var p = cnaProfilesCache.find(function (x) { return x.id === sel.value; });
     if (!p) { return; }
     var portalEl = document.getElementById('cpPortal');

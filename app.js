@@ -35,6 +35,7 @@ const { sanitizeRichHtml } = require('./lib/html-sanitize');
 const mongo = require('./lib/mongo');
 const rbac = require('./lib/rbac');
 const instanceSettings = require('./lib/instance-settings');
+const teamModel = require('./models/team');
 
 if (!process.env.NODE_ENV) {
     process.env.NODE_ENV = "production";
@@ -214,6 +215,37 @@ app.use(function (req, res, next) {
         delete req.session.returnTo
     }
     next()
+})
+
+// Resolve the user's team keys to display names for the team switcher, and expose
+// the currently selected active team. Team names are cached briefly to avoid a DB
+// query on every request (the teams collection is small).
+var teamNameCache = { at: 0, map: {} };
+async function getTeamNameMap() {
+    var now = Date.now();
+    if (now - teamNameCache.at < 60000 && Object.keys(teamNameCache.map).length) {
+        return teamNameCache.map;
+    }
+    var teams = await teamModel.find({}, { projection: { key: 1, name: 1 } });
+    var map = {};
+    teams.forEach(function (t) { map[t.key] = t.name || t.key; });
+    teamNameCache = { at: now, map: map };
+    return map;
+}
+app.use(async function (req, res, next) {
+    res.locals.userTeams = [];
+    res.locals.activeTeam = (req.session && req.session.activeTeam) || '';
+    try {
+        if (req.user && Array.isArray(req.user.teams) && req.user.teams.length) {
+            var map = await getTeamNameMap();
+            res.locals.userTeams = req.user.teams
+                .map(function (t) { return { key: t.team, name: map[t.team] || t.team }; })
+                .filter(function (t) { return t.key; });
+        }
+    } catch (e) {
+        // On any lookup failure, leave the switcher empty rather than break the page.
+    }
+    next();
 })
 
 async function bootstrap() {

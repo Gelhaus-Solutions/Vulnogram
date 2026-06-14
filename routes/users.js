@@ -451,6 +451,21 @@ protected.post('/cna/:id/delete', csrfProtection, async function (req, res) {
     }
 });
 
+// Switch the active team used to scope CVE views (and to own newly created CVEs).
+// '*' or empty means "all my teams" (the merged view). Stored per-session.
+protected.post('/active-team', csrfProtection, function (req, res) {
+    var key = (req.body && req.body.team) || '';
+    var back = req.get('Referer') || '/';
+    if (key === '' || key === '*') {
+        req.session.activeTeam = null;
+    } else if (Array.isArray(req.user.teams) && req.user.teams.some(function (t) { return t.team === key; })) {
+        req.session.activeTeam = key;
+    } else {
+        req.flash('error', 'You are not a member of that team.');
+    }
+    res.redirect(back);
+});
+
 module.exports = {
     public: public,
     protected: protected

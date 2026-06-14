@@ -249,7 +249,7 @@ module.exports = function (Document, opts) {
                 res.json({ type: 'err', msg: 'You do not have permission to create CVEs.' });
                 return;
             }
-            var pteam = docAccess.primaryTeam(req.user);
+            var pteam = docAccess.resolveOwningTeam(req.user, req.session && req.session.activeTeam);
             entry.owner = req.user.username;
             entry.team = pteam;
             entry.visibility = pteam ? 'team' : 'private';
@@ -335,7 +335,7 @@ module.exports = function (Document, opts) {
             };
             var setOnInsert = { createdAt: d };
             if (opts.conf && opts.conf.teamScoped && !targetDoc) {
-                var newPteam = docAccess.primaryTeam(req.user);
+                var newPteam = docAccess.resolveOwningTeam(req.user, req.session && req.session.activeTeam);
                 setOnInsert.owner = req.user.username;
                 setOnInsert.team = newPteam;
                 setOnInsert.visibility = newPteam ? 'team' : 'private';

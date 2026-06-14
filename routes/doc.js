@@ -197,19 +197,31 @@ module.exports = function (name, opts) {
     queryMWBody = querymw(opts.facet, 'body');
 
     // For teamScoped sections, restrict queries to docs the user may read.
-    function applyReadScope(q, user) {
+    // When activeTeam is set, further narrow the result to that one team so the
+    // list shows a single team at a time instead of every team merged together.
+    function applyReadScope(q, user, activeTeam) {
         if (!(opts.conf && opts.conf.teamScoped)) {
             return q;
         }
-        var f = docAccess.buildReadFilter(user);
-        if (!f) {
+        var filters = [];
+        var permissionFilter = docAccess.buildReadFilter(user);
+        if (permissionFilter) {
+            filters.push(permissionFilter);
+        }
+        var teamFilter = docAccess.activeTeamFilter(activeTeam);
+        if (teamFilter) {
+            filters.push(teamFilter);
+        }
+        if (!filters.length) {
             return q;
         }
-        return (q && Object.keys(q).length) ? { $and: [q, f] } : f;
+        var combined = filters.length === 1 ? filters[0] : { $and: filters };
+        return (q && Object.keys(q).length) ? { $and: [q, combined] } : combined;
     }
     function teamScope(req, res, next) {
         if (opts.conf && opts.conf.teamScoped && req.querymen) {
-            req.querymen.query = applyReadScope(req.querymen.query || {}, req.user);
+            var activeTeam = req.session ? req.session.activeTeam : null;
+            req.querymen.query = applyReadScope(req.querymen.query || {}, req.user, activeTeam);
         }
         next();
     }
