@@ -228,6 +228,7 @@
               "items": {
                 "type": "object",
                 "title": "action item",
+                "required": ["done"],
                 "properties": {
                   "task": {
                     "type": "string",
@@ -235,8 +236,12 @@
                   },
                   "done": {
                     "type": "boolean",
-                    "format": "checkbox",
-                    "title": "done"
+                    "title": "done",
+                    "default": false,
+                    "options": {
+                      "switcher": true,
+                      "enum_titles": ["done", "todo"]
+                    }
                   }
                 }
               },

@@ -291,7 +291,19 @@ var defaultTabs = {
                 sourceEditor.$blockScrolling = Infinity;
             }
             insync = true;
-            sourceEditor.getSession().setValue(JSON.stringify(val, null, 2));
+            /* The Source view is the submittable record; never expose the private
+               CNA_private internal-workflow data here (avoids confusion and leaking
+               private data when copying). Stash it so getValue can re-attach it —
+               switching Source -> Editor feeds this value back into docEditor.setValue. */
+            var display = val;
+            if (val && typeof val === 'object' && !Array.isArray(val) && ('CNA_private' in val)) {
+                defaultTabs.sourceTab._cnaPrivate = val.CNA_private;
+                display = Object.assign({}, val);
+                delete display.CNA_private;
+            } else {
+                defaultTabs.sourceTab._cnaPrivate = undefined;
+            }
+            sourceEditor.getSession().setValue(JSON.stringify(display, null, 2));
             sourceEditor.clearSelection();
             insync = false;
         },
@@ -327,7 +339,13 @@ var defaultTabs = {
             } finally {}
         },
         getValue: function () {
-            return JSON.parse(sourceEditor.getSession().getValue());
+            var res = JSON.parse(sourceEditor.getSession().getValue());
+            /* Re-attach the CNA_private workflow data stripped out in setValue so it is
+               not lost when the Source value flows back into the editor model / save. */
+            if (defaultTabs.sourceTab._cnaPrivate !== undefined && res && typeof res === 'object') {
+                res.CNA_private = defaultTabs.sourceTab._cnaPrivate;
+            }
+            return res;
         }
     }
 };

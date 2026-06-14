@@ -1916,15 +1916,18 @@ async function cveRefreshDraftPublishDialog() {
                 deleteBtn.addEventListener('click', function (e) {
                     e.preventDefault();
                     e.stopPropagation();
-                    cveDraftPublishSetStatus(entry.id, '');
-                    cveDraftPublishSetSummary('Deleting draft ' + entry.id + '...');
-                    draftsCache.cancelSave();
-                    Promise.resolve(draftsCache.remove(entry.id)).then(function () {
-                        return cveRefreshDraftPublishDialog();
-                    }).then(function () {
-                        cveDraftPublishSetSummary('Deleted draft ' + entry.id + '.');
-                    }).catch(function (err) {
-                        cveDraftPublishSetSummary(cvePublishErrorMessage(err), true);
+                    confirmDialog('Delete draft ' + entry.id + '?', 'This removes the local draft and cannot be undone.').then(function (confirmed) {
+                        if (!confirmed) return;
+                        cveDraftPublishSetStatus(entry.id, '');
+                        cveDraftPublishSetSummary('Deleting draft ' + entry.id + '...');
+                        draftsCache.cancelSave();
+                        return Promise.resolve(draftsCache.remove(entry.id)).then(function () {
+                            return cveRefreshDraftPublishDialog();
+                        }).then(function () {
+                            cveDraftPublishSetSummary('Deleted draft ' + entry.id + '.');
+                        }).catch(function (err) {
+                            cveDraftPublishSetSummary(cvePublishErrorMessage(err), true);
+                        });
                     });
                 });
                 tdActions.appendChild(deleteBtn);

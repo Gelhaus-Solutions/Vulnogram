@@ -199,6 +199,11 @@ JSONEditor.defaults.editors.object = class mystring extends JSONEditor.defaults.
         if(this.container && this.options.containerClass) {
             this.container.className = this.container.className + ' ' + this.options.containerClass;
         }
+        /* In a "categories" object the parent renders a tab per child using the child's
+           title, so the child's own in-pane title just duplicates the tab label. Hide it. */
+        if (this.title && this.parent && this.parent.schema && this.parent.schema.format === 'categories') {
+            this.title.style.display = 'none';
+        }
     }
     getValue () {
         if (!this.dependenciesFulfilled) {
@@ -220,6 +225,22 @@ JSONEditor.defaults.editors.object = class mystring extends JSONEditor.defaults.
           })
         }
         return result
+    }
+}
+
+JSONEditor.defaults.editors.select = class mystring extends JSONEditor.defaults.editors.select {
+    build() {
+        super.build();
+        /* Opt-in (options.switcher): render this boolean/select as the built-in je-switcher
+           segmented control (same treatment as theme.getSwitcher) instead of a checkbox or
+           dropdown. Used by the CNA Internal Workflow checklist "done" toggle. */
+        if (this.options.switcher && this.input) {
+            this.input.classList.add('je-switcher');
+            if (!/^((?!chrome|android).)*safari/i.test(navigator.userAgent)) {
+                this.input.classList.add('rdg');
+                this.input.setAttribute('size', 2);
+            }
+        }
     }
 }
 
@@ -1056,6 +1077,26 @@ JSONEditor.defaults.themes.customTheme = class customTheme extends JSONEditor.Ab
             if(iconMap[text.textContent])
                 text.className = iconTheme + iconMap[text.textContent];
             el.appendChild(text);
+        }
+        return el;
+    }
+    /* Multi-value labels (e.g. the People assignees/reviewers/approvers "checkbox" arrays)
+       render their group label via getLabelLike (a <b>), which bypasses iconMap. Apply the
+       same icon lookup as getFormInputLabel so these labels get their workflow icon. */
+    getLabelLike(text) {
+        var el = super.getLabelLike(text);
+        if (el && typeof text === 'string' && iconMap[text]) {
+            el.className = (el.className ? el.className + ' ' : '') + iconTheme + iconMap[text];
+        }
+        return el;
+    }
+    /* "categories" tabs are built via getTopTab and don't consult iconMap; add the section
+       icon to the tab (the in-pane duplicate title is hidden in the object editor). */
+    getTopTab(text, tabId) {
+        var el = super.getTopTab(text, tabId);
+        var label = (text && typeof text === 'object') ? text.textContent : text;
+        if (el && label && iconMap[label]) {
+            el.classList.add(iconTheme + iconMap[label]);
         }
         return el;
     }

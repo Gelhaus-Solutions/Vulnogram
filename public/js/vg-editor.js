@@ -2581,8 +2581,11 @@ function renderDraftButtons(target, entries) {
             e.preventDefault();
             e.stopPropagation();
             if (!draftsCache || !draftsCache.remove) return;
-            draftsCache.cancelSave();
-            draftsCache.remove(entry.id);
+            confirmDialog('Delete draft ' + entry.id + '?', 'This removes the local draft and cannot be undone.').then(function (ok) {
+                if (!ok) return;
+                draftsCache.cancelSave();
+                draftsCache.remove(entry.id);
+            });
         });
         Meta.appendChild(del);
         btn.appendChild(Meta);
@@ -3139,6 +3142,11 @@ JSONEditor.defaults.editors.object = class mystring extends JSONEditor.defaults.
         if(this.container && this.options.containerClass) {
             this.container.className = this.container.className + ' ' + this.options.containerClass;
         }
+        /* In a "categories" object the parent renders a tab per child using the child's
+           title, so the child's own in-pane title just duplicates the tab label. Hide it. */
+        if (this.title && this.parent && this.parent.schema && this.parent.schema.format === 'categories') {
+            this.title.style.display = 'none';
+        }
     }
     getValue () {
         if (!this.dependenciesFulfilled) {
@@ -3160,6 +3168,22 @@ JSONEditor.defaults.editors.object = class mystring extends JSONEditor.defaults.
           })
         }
         return result
+    }
+}
+
+JSONEditor.defaults.editors.select = class mystring extends JSONEditor.defaults.editors.select {
+    build() {
+        super.build();
+        /* Opt-in (options.switcher): render this boolean/select as the built-in je-switcher
+           segmented control (same treatment as theme.getSwitcher) instead of a checkbox or
+           dropdown. Used by the CNA Internal Workflow checklist "done" toggle. */
+        if (this.options.switcher && this.input) {
+            this.input.classList.add('je-switcher');
+            if (!/^((?!chrome|android).)*safari/i.test(navigator.userAgent)) {
+                this.input.classList.add('rdg');
+                this.input.setAttribute('size', 2);
+            }
+        }
     }
 }
 
@@ -3999,6 +4023,26 @@ JSONEditor.defaults.themes.customTheme = class customTheme extends JSONEditor.Ab
         }
         return el;
     }
+    /* Multi-value labels (e.g. the People assignees/reviewers/approvers "checkbox" arrays)
+       render their group label via getLabelLike (a <b>), which bypasses iconMap. Apply the
+       same icon lookup as getFormInputLabel so these labels get their workflow icon. */
+    getLabelLike(text) {
+        var el = super.getLabelLike(text);
+        if (el && typeof text === 'string' && iconMap[text]) {
+            el.className = (el.className ? el.className + ' ' : '') + iconTheme + iconMap[text];
+        }
+        return el;
+    }
+    /* "categories" tabs are built via getTopTab and don't consult iconMap; add the section
+       icon to the tab (the in-pane duplicate title is hidden in the object editor). */
+    getTopTab(text, tabId) {
+        var el = super.getTopTab(text, tabId);
+        var label = (text && typeof text === 'object') ? text.textContent : text;
+        if (el && label && iconMap[label]) {
+            el.classList.add(iconTheme + iconMap[label]);
+        }
+        return el;
+    }
     getTable() {
         var el = super.getTable();
         el.className = 'nobor';
@@ -4458,7 +4502,19 @@ var defaultTabs = {
                 sourceEditor.$blockScrolling = Infinity;
             }
             insync = true;
-            sourceEditor.getSession().setValue(JSON.stringify(val, null, 2));
+            /* The Source view is the submittable record; never expose the private
+               CNA_private internal-workflow data here (avoids confusion and leaking
+               private data when copying). Stash it so getValue can re-attach it —
+               switching Source -> Editor feeds this value back into docEditor.setValue. */
+            var display = val;
+            if (val && typeof val === 'object' && !Array.isArray(val) && ('CNA_private' in val)) {
+                defaultTabs.sourceTab._cnaPrivate = val.CNA_private;
+                display = Object.assign({}, val);
+                delete display.CNA_private;
+            } else {
+                defaultTabs.sourceTab._cnaPrivate = undefined;
+            }
+            sourceEditor.getSession().setValue(JSON.stringify(display, null, 2));
             sourceEditor.clearSelection();
             insync = false;
         },
@@ -4494,7 +4550,13 @@ var defaultTabs = {
             } finally {}
         },
         getValue: function () {
-            return JSON.parse(sourceEditor.getSession().getValue());
+            var res = JSON.parse(sourceEditor.getSession().getValue());
+            /* Re-attach the CNA_private workflow data stripped out in setValue so it is
+               not lost when the Source value flows back into the editor model / save. */
+            if (defaultTabs.sourceTab._cnaPrivate !== undefined && res && typeof res === 'object') {
+                res.CNA_private = defaultTabs.sourceTab._cnaPrivate;
+            }
+            return res;
         }
     }
 };
@@ -4744,4 +4806,36 @@ function showAlert(msg, smallmsg, timer, showCancel) {
         setTimeout(function () {
             document.getElementById("alertDialog").close();
         }, timer);
+}
+
+// Promise-based confirm built on the existing #alertDialog (showAlert) so destructive
+// actions (deleting a draft, etc.) always prompt. Resolves true on OK, false on Cancel/Esc.
+function confirmDialog(msg, smallmsg) {
+    return new Promise(function (resolve) {
+        var dialog = document.getElementById("alertDialog");
+        var ok = document.getElementById("alertOk");
+        var cancel = document.getElementById("alertCancel");
+        if (!dialog || !ok || !cancel) {
+            // Fall back to a native confirm if the dialog markup is unavailable.
+            resolve(window.confirm(smallmsg ? msg + "\n\n" + smallmsg : msg));
+            return;
+        }
+        var settled = false;
+        function settle(result) {
+            if (settled) return;
+            settled = true;
+            ok.removeEventListener("click", onOk);
+            cancel.removeEventListener("click", onCancel);
+            dialog.removeEventListener("cancel", onDismiss);
+            if (dialog.open) { try { dialog.close(); } catch (e) {} }
+            resolve(result);
+        }
+        function onOk() { settle(true); }
+        function onCancel() { settle(false); }
+        function onDismiss() { settle(false); }
+        ok.addEventListener("click", onOk);
+        cancel.addEventListener("click", onCancel);
+        dialog.addEventListener("cancel", onDismiss);
+        showAlert(msg, smallmsg, null, true);
+    });
 }

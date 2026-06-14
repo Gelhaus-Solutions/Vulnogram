@@ -234,6 +234,38 @@ function showAlert(msg, smallmsg, timer, showCancel) {
         }, timer);
 }
 
+// Promise-based confirm built on the existing #alertDialog (showAlert) so destructive
+// actions (deleting a draft, etc.) always prompt. Resolves true on OK, false on Cancel/Esc.
+function confirmDialog(msg, smallmsg) {
+    return new Promise(function (resolve) {
+        var dialog = document.getElementById("alertDialog");
+        var ok = document.getElementById("alertOk");
+        var cancel = document.getElementById("alertCancel");
+        if (!dialog || !ok || !cancel) {
+            // Fall back to a native confirm if the dialog markup is unavailable.
+            resolve(window.confirm(smallmsg ? msg + "\n\n" + smallmsg : msg));
+            return;
+        }
+        var settled = false;
+        function settle(result) {
+            if (settled) return;
+            settled = true;
+            ok.removeEventListener("click", onOk);
+            cancel.removeEventListener("click", onCancel);
+            dialog.removeEventListener("cancel", onDismiss);
+            if (dialog.open) { try { dialog.close(); } catch (e) {} }
+            resolve(result);
+        }
+        function onOk() { settle(true); }
+        function onCancel() { settle(false); }
+        function onDismiss() { settle(false); }
+        ok.addEventListener("click", onOk);
+        cancel.addEventListener("click", onCancel);
+        dialog.addEventListener("cancel", onDismiss);
+        showAlert(msg, smallmsg, null, true);
+    });
+}
+
 export {
     loadJSON,
     save,
@@ -244,5 +276,6 @@ export {
     downloadFile,
     downloadText,
     downloadHtml,
-    showAlert
+    showAlert,
+    confirmDialog
 };

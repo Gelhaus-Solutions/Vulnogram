@@ -555,6 +555,21 @@ function collectDefaultPropertyValuesFromDialog() {
     return normalizeDefaultPropertyValues(out, docSchema);
 }
 
+// Capture actual field content to persist with a template. Currently the affected
+// products from the live editor. Deliberately excludes the CVE ID (unique per record)
+// and the CNA_private internal workflow (private, per-record).
+function collectTemplateContent() {
+    var content = {};
+    if (typeof docEditor !== 'undefined' && docEditor) {
+        var current = docEditor.getValue();
+        var affected = current && current.containers && current.containers.cna && current.containers.cna.affected;
+        if (Array.isArray(affected) && affected.length) {
+            content.affected = cloneJSON(affected);
+        }
+    }
+    return content;
+}
+
 function getEditorOptionsForDocValue(value) {
     if (value && value.cveMetadata && value.cveMetadata.state === 'REJECTED') {
         return rejectEditorOption;
@@ -562,11 +577,37 @@ function getEditorOptionsForDocValue(value) {
     return publicEditorOption;
 }
 
+// Template "content" = actual field values (currently the affected products) staged by
+// vgApplyTemplate to be merged into the editor on the next reload. The internal workflow
+// (CNA_private) and the CVE ID are deliberately never part of template content.
+var pendingTemplateContent = null;
+
+function applyTemplateContentToValue(value, content) {
+    if (!content) {
+        return value;
+    }
+    value = value || {};
+    if (Array.isArray(content.affected) && content.affected.length) {
+        value.containers = value.containers || {};
+        value.containers.cna = value.containers.cna || {};
+        var current = value.containers.cna.affected;
+        // Only pre-fill when the record has no affected products yet — never overwrite.
+        if (!Array.isArray(current) || current.length === 0) {
+            value.containers.cna.affected = cloneJSON(content.affected);
+        }
+    }
+    return value;
+}
+
 function refreshEditorForDefaultPropertySettings() {
     if (!docEditor || typeof loadJSON !== 'function') {
         return;
     }
     var value = docEditor.getValue();
+    if (pendingTemplateContent) {
+        value = applyTemplateContentToValue(value, pendingTemplateContent);
+        pendingTemplateContent = null;
+    }
     var id = (typeof getDocID === 'function') ? getDocID() : null;
     loadJSON(value, id, undefined, getEditorOptionsForDocValue(value));
     setTimeout(function () {
@@ -664,6 +705,7 @@ async function vgApplyTemplate() {
         var t = await res.json();
         applyDefaultPropertiesSelection(t.selection || {});
         applyDefaultPropertyValues(t.values || {});
+        pendingTemplateContent = t.content || null;
         saveCachedDefaultPropertiesSettings(defaultPropertiesSelection, defaultPropertyValues);
         if (typeof syncDefaultPropertiesDialog === 'function') { syncDefaultPropertiesDialog(); }
         if (typeof refreshEditorForDefaultPropertySettings === 'function') { refreshEditorForDefaultPropertySettings(); }
@@ -683,6 +725,7 @@ async function vgSaveTemplate() {
         selection[defaultPropertiesTargetNames[i]] = collectSelectionFromDialog(defaultPropertiesTargetNames[i]);
     }
     var values = collectDefaultPropertyValuesFromDialog();
+    var content = collectTemplateContent();
     var scopeRaw = scopeEl ? scopeEl.value : 'user';
     var scope = 'user', team = '';
     if (scopeRaw.indexOf('team:') === 0) { scope = 'team'; team = scopeRaw.substring(5); }
@@ -692,6 +735,7 @@ async function vgSaveTemplate() {
     if (team) { body.set('team', team); }
     body.set('selection', JSON.stringify(selection));
     body.set('values', JSON.stringify(values));
+    body.set('content', JSON.stringify(content));
     try {
         var res = await fetch('/templates', {
             method: 'POST',

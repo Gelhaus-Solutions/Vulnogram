@@ -239,8 +239,11 @@ function renderDraftButtons(target, entries) {
             e.preventDefault();
             e.stopPropagation();
             if (!draftsCache || !draftsCache.remove) return;
-            draftsCache.cancelSave();
-            draftsCache.remove(entry.id);
+            confirmDialog('Delete draft ' + entry.id + '?', 'This removes the local draft and cannot be undone.').then(function (ok) {
+                if (!ok) return;
+                draftsCache.cancelSave();
+                draftsCache.remove(entry.id);
+            });
         });
         Meta.appendChild(del);
         btn.appendChild(Meta);

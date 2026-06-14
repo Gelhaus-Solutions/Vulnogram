@@ -87,7 +87,24 @@ module.exports = {
         'INTERNAL':'hardhat',
         'EXTERNAL': 'hat',
         'USER':'cap',
-        'UNKNOWN':'what'
+        'UNKNOWN':'what',
+        // CNA Internal Workflow: section tabs
+        'People': 'user',
+        'Triage': 'bucket',
+        'Dates': 'cal',
+        'Checklist': 'task',
+        'Notes': 'text',
+        // CNA Internal Workflow: field labels
+        'type': 'bucket',
+        'Priority': 'dial',
+        'Internal severity': 'knob',
+        'owner': 'user',
+        'Assignees': 'user',
+        'Reviewers': 'eye',
+        'Approvers': 'cap',
+        'Due date': 'cal',
+        'Embargo / disclosure date': 'time',
+        'Internal notes': 'text'
 
     },
     /*

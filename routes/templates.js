@@ -70,7 +70,7 @@ router.get('/:id/json', async function (req, res) {
         if (!canSee(req.user, t)) {
             return res.status(t ? 403 : 404).json({ error: t ? 'No access' : 'Not found' });
         }
-        res.json({ id: String(t._id), name: t.name, selection: t.selection || {}, values: t.values || {} });
+        res.json({ id: String(t._id), name: t.name, selection: t.selection || {}, values: t.values || {}, content: t.content || {} });
     } catch (err) {
         res.status(500).json({ error: 'Failed to load template' });
     }
@@ -101,6 +101,7 @@ router.post('/', csrfProtection, async function (req, res) {
             createdBy: req.user.username,
             selection: parseJSON(req.body.selection) || {},
             values: parseJSON(req.body.values) || {},
+            content: parseJSON(req.body.content) || {},
             createdAt: now,
             updatedAt: now
         };
