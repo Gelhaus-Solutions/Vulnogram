@@ -903,6 +903,7 @@
           "default": "unaffected"
         }
       },
+      "additionalProperties": false,
       "defaultProperties": [
         "vendor",
         "product",
@@ -943,7 +944,7 @@
     "dataVersion": {
       "description": "The version of the schema being used. Used to support multiple versions of this format.",
       "type": "string",
-      "default": "5.1",
+      "default": "5.2",
       "pattern": "^5\\.[0-9]+(\\.[0-9]+)?$",
       "options": {
         "hidden": "true"

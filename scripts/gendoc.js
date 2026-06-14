@@ -619,7 +619,7 @@ async function applyAction(page, action, context) {
 
             return {
               dataType: 'CVE_RECORD',
-              dataVersion: '5.1',
+              dataVersion: '5.2',
               cveMetadata: {
                 cveId: id,
                 state: 'PUBLISHED',
