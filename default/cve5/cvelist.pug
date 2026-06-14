@@ -425,6 +425,182 @@ mixin mgmtPortalShell
         center.pad2
             .spinner
 
+//- ===== Secretariat management portal =====================================
+mixin secPortalBody
+    .flx.gap.pad
+        button.btn.sfe.vgi-add(onclick="secShowCreateOrg(event)") Create org
+        span.txt-icon-wrap
+            span.txt-input-icon.vgi-search
+            input#secOrgFilter.bor.txt.txt-has-icon(type="search", placeholder="Open org by short name", autocomplete="off", onkeydown="if(event.key==='Enter'){event.preventDefault();secOrgLookup();return false;}")
+        button.btn.vgi-search(onclick="secOrgLookup()") Open
+        button.btn.vgi-reuse(onclick="secLoadOrgs(1)") List all orgs
+    #secOrgCreate.hid.gap
+    table.vtbl#secOrgTable
+        thead
+            tr
+                th Short name
+                th Name
+                th Roles
+                th Quota
+                th
+        tbody#secOrgRows
+            tr
+                td(colspan=5)
+                    center.pad2: .spinner
+    #secOrgPage.gap.hid
+        .rdg
+            div.lbl#secOrgPageInfo
+            button.lbl#secPrevPage(onclick="secPaginate(-1)") &#8249;
+            div.lbl#secCurrentPage 1
+            button.lbl#secNextPage(onclick="secPaginate(1)") &#8250;
+    hr.bort
+    #secOrgDetail.gap
+
+mixin secOrgRows
+    if orgs && orgs.length
+        each o in orgs
+            tr
+                td
+                    a.fbn.vgi-org(onclick="secOpenOrg('"+o.short_name+"')")= o.short_name
+                td= o.name
+                td.sml= (o.authority && o.authority.active_roles) ? o.authority.active_roles.join(', ') : ''
+                td= (o.policies && (typeof o.policies.id_quota === 'number')) ? o.policies.id_quota : ''
+                td
+                    button.fbn.vgi-cog(onclick="secOpenOrg('"+o.short_name+"')", title="Manage") Manage
+    else
+        tr
+            td(colspan=5)
+                i.gap2 No organizations found.
+
+mixin secOrgDetailView
+    header.pad.ban
+        b.lbl.vgi-org Managing:
+            =org.short_name
+        a.right.rbtn.vgi-x(title="Close" onclick="document.getElementById('secOrgDetail').innerHTML='';")
+    .pad
+        dl
+            dt Name:
+                b=org.name
+            dt Roles:
+                b= (org.authority && org.authority.active_roles) ? org.authority.active_roles.join(', ') : ''
+            dt UUID:
+                small=org.UUID
+    .flx.gap.pad
+        if quota
+            span.lbl.vgi-tag.nobr Quota&nbsp;
+                b=quota.id_quota
+            span.lbl.nobr reserved&nbsp;
+                b=quota.total_reserved
+            span.lbl.nobr(class=(typeof quota.available==='number' && quota.available<=0)?'tred':'') available&nbsp;
+                b=quota.available
+        button.fbn.vgi-edit(onclick="secSetQuota('"+org.short_name+"', "+((quota && typeof quota.id_quota==='number')?quota.id_quota:0)+")") Set quota
+        button.fbn.vgi-edit(onclick="secEditOrg('"+org.short_name+"')") Edit org
+    hr.bort
+    .flx.gap.pad
+        b.lbl.vgi-cog Users
+        button.fbn.sfe.vgi-add(onclick="secShowAddUser('"+org.short_name+"')") Add user
+    #secAddUserSlot.gap
+    table.vtbl
+        thead
+            tr
+                th Name
+                th Username
+                th Roles
+                th Active
+                th Actions
+        tbody
+            if users && users.length
+                each u in users
+                    tr
+                        td= u.name ? ((u.name.first||'') + ' ' + (u.name.last||'')) : ''
+                        td.sml= u.username
+                        td.sml= (u.authority && u.authority.active_roles) ? u.authority.active_roles.join(', ') : ''
+                        td= u.active ? '✓' : '✗'
+                        td
+                            - var isAdmin = !!(u.authority && u.authority.active_roles && u.authority.active_roles.indexOf('ADMIN')>=0)
+                            a.fbn.vgi-key(title="Reset API key" onclick="secResetUser('"+org.short_name+"','"+u.username+"')") &nbsp;
+                            a.fbn.vgi-king(title=(isAdmin?'Remove admin':'Make admin') onclick="secToggleAdmin('"+org.short_name+"','"+u.username+"',"+(isAdmin?'true':'false')+")") &nbsp;
+                            a.fbn(class=(u.active?'vgi-no':'vgi-ok'), title=(u.active?'Deactivate':'Activate') onclick="secToggleActive('"+org.short_name+"','"+u.username+"',"+(u.active?'true':'false')+")") &nbsp;
+            else
+                tr
+                    td(colspan=5)
+                        i No users.
+
+mixin secRoleChecks
+    label.lbl
+        input(type="checkbox", name="role", value="CNA", checked=(typeof roles==='undefined' || roles.indexOf('CNA')>=0))
+        |  CNA
+    label.lbl
+        input(type="checkbox", name="role", value="ADP", checked=(typeof roles!=='undefined' && roles.indexOf('ADP')>=0))
+        |  ADP
+    label.lbl
+        input(type="checkbox", name="role", value="ROOT_CNA", checked=(typeof roles!=='undefined' && roles.indexOf('ROOT_CNA')>=0))
+        |  ROOT_CNA
+    label.lbl
+        input(type="checkbox", name="role", value="SECRETARIAT", checked=(typeof roles!=='undefined' && roles.indexOf('SECRETARIAT')>=0))
+        |  SECRETARIAT
+
+mixin secCreateOrgForm
+    form.sec.bor.rndx.pad.gap(onsubmit="return secCreateOrg(event, this);")
+        b.lbl.vgi-add Create organization
+        .vflx
+            label.lbl(for="secNewShort") Short name
+            input#secNewShort.bor.txt(name="short_name", required=true, pattern=".{2,32}", placeholder="acme_inc")
+            label.lbl(for="secNewName") Name
+            input#secNewName.bor.txt(name="name", required=true, placeholder="ACME, Inc.")
+            label.lbl Roles
+            .rdg
+                +secRoleChecks
+            label.lbl(for="secNewQuota") ID quota
+            input#secNewQuota.bor.txt(name="id_quota", type="number", min="0", max="100000", value="100")
+        .gap
+            button.btn.sfe(type="submit") Create
+            |
+            button.btn.vgi-x(type="button", onclick="document.getElementById('secOrgCreate').classList.add('hid');document.getElementById('secOrgCreate').innerHTML='';") Cancel
+
+mixin secEditOrgForm
+    form.sec.bor.rndx.pad.gap(onsubmit="return secSubmitEditOrg(event, this, '"+org.short_name+"');")
+        b.lbl.vgi-edit Edit
+            =org.short_name
+        .vflx
+            label.lbl(for="secEditName") Name
+            input#secEditName.bor.txt(name="name", value=org.name)
+            label.lbl(for="secEditShort") New short name (optional)
+            input#secEditShort.bor.txt(name="new_short_name", placeholder=org.short_name, pattern=".{2,32}")
+            label.lbl Roles
+            .rdg
+                +secRoleChecks
+            label.lbl(for="secEditQuota") ID quota
+            input#secEditQuota.bor.txt(name="id_quota", type="number", min="0", max="100000", value=quota?quota.id_quota:'')
+        .gap
+            button.btn.sfe(type="submit") Save
+            |
+            button.btn.vgi-x(type="button", onclick="document.getElementById('secOrgDetail').querySelector('#secEditSlot') && (document.getElementById('secEditSlot').innerHTML='');") Cancel
+
+mixin secAddUserForm
+    form.sec.bor.rndx.pad.gap(onsubmit="return secSubmitAddUser(event, this, '"+shortName+"');")
+        b.lbl.vgi-add Add user to
+            =shortName
+        .vflx
+            label.lbl(for="secAuUser") Username
+            input#secAuUser.bor.txt(name="username", required=true, pattern=".{3,128}", placeholder="jane@acme.example")
+            label.lbl(for="secAuFirst") First name
+            input#secAuFirst.bor.txt(name="first")
+            label.lbl(for="secAuLast") Last name
+            input#secAuLast.bor.txt(name="last")
+            label.lbl
+                input(type="checkbox", name="admin")
+                |  Organization admin
+        .gap
+            button.btn.sfe(type="submit") Create user
+            |
+            button.btn.vgi-x(type="button", onclick="document.getElementById('secAddUserSlot').innerHTML='';") Cancel
+
+mixin rootPortalBody
+    .pad2
+        b.lbl.vgi-king Root operations are not available yet
+        p.tgrey CVE Services has not implemented Root organization management. Root-specific actions (such as creating and managing child CNAs) will appear here once CVE Services supports them. For now, manage your own organization from the CVE CNA Portal.
+
 block red
     if ctemplate != undefined
         +#{ctemplate}

@@ -111,7 +111,13 @@ getURL = (path, query) => {
 
     if (query) {
         for (const [k, v] of Object.entries(query)) {
-            url.searchParams.append(k, v);
+            // Append array values as repeated keys so the API receives a real
+            // array (e.g. active_roles.add=CNA&active_roles.add=ADP).
+            if (Array.isArray(v)) {
+                v.forEach(function (item) { url.searchParams.append(k, item); });
+            } else {
+                url.searchParams.append(k, v);
+            }
         }
     }
 

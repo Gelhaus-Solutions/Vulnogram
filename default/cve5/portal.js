@@ -90,9 +90,13 @@ function orgIsRoot(orgInfo) {
 }
 
 function applyPortalRoleVisibility(orgInfo) {
+    // The Root portal stays hidden for now: CVE Services has not implemented Root
+    // organizations yet (all cross-org management is Secretariat-only), so a pure
+    // ROOT_CNA has no root-specific actions available. The scaffolding is kept so
+    // it can be enabled once CVE Services grants roots those powers.
     var rootNav = document.getElementById('cveRootPortalNav');
     var secNav = document.getElementById('cveSecretariatPortalNav');
-    if (rootNav) { rootNav.classList.toggle('hid', !orgIsRoot(orgInfo)); }
+    if (rootNav) { rootNav.classList.add('hid'); }
     if (secNav) { secNav.classList.toggle('hid', !orgIsSecretariat(orgInfo)); }
 }
 
@@ -350,11 +354,297 @@ function showCveSecretariatPortal(event) {
     return false;
 }
 
-// Filled in by the next task; for now shows a placeholder in the shell body.
 async function renderManagementPortal(scope, orgInfo) {
     var body = document.getElementById(scope.pfx + 'MgmtBody');
-    if (body) {
-        body.innerHTML = '<div class="pad2 tgrey">Management tools (orgs, users, quota, search) load here.</div>';
+    if (!body) { return; }
+    if (scope.key === 'secretariat') {
+        body.innerHTML = cveRender({ ctemplate: 'secPortalBody', orgInfo: orgInfo });
+        await secLoadOrgs(1);
+    } else {
+        // Root orgs are not implemented in CVE Services yet (button is hidden).
+        body.innerHTML = cveRender({ ctemplate: 'rootPortalBody', orgInfo: orgInfo });
+    }
+}
+
+// ---- Secretariat management portal ---------------------------------------
+var secMgmt = { orgPage: 1 };
+
+function secMgmtSetStatus(msg, isError) {
+    var el = document.getElementById('secMgmtStatus');
+    if (el) {
+        el.innerText = msg || '';
+        el.className = 'pad' + (isError ? ' tred' : '');
+    }
+}
+
+// Surface CVE Services errors (rejected objects carry .error / .message / .details).
+function secErr(e) {
+    if (!e) { return 'Unknown error'; }
+    if (typeof e === 'string') { return e; }
+    if (e.message) { return e.message; }
+    if (e.error && typeof e.error === 'string') { return e.error; }
+    return 'Request failed';
+}
+
+function secActiveRoles(org) {
+    return (org && org.authority && Array.isArray(org.authority.active_roles)) ? org.authority.active_roles.slice() : [];
+}
+
+function secCheckedRoles(form) {
+    var roles = [];
+    var boxes = form.querySelectorAll('input[name="role"]:checked');
+    for (var i = 0; i < boxes.length; i++) { roles.push(boxes[i].value); }
+    return roles;
+}
+
+async function secLoadOrgs(page) {
+    secMgmt.orgPage = page || 1;
+    var tbody = document.getElementById('secOrgRows');
+    if (!tbody) { return; }
+    var fb = new feedback(tbody, 'spinner');
+    try {
+        secMgmtSetStatus('');
+        var data = await csClient.listOrgs({ page: secMgmt.orgPage });
+        if (data && data.error) { secMgmtSetStatus(secErr(data), true); return; }
+        var orgs = (data && data.organizations) ? data.organizations : [];
+        tbody.innerHTML = cveRender({ ctemplate: 'secOrgRows', orgs: orgs });
+        secRenderOrgPagination(data);
+    } catch (e) {
+        secMgmtSetStatus(secErr(e), true);
+    } finally {
+        fb.cancel();
+    }
+}
+
+function secRenderOrgPagination(data) {
+    var el = document.getElementById('secOrgPage');
+    if (!el) { return; }
+    if (data && (data.nextPage || data.prevPage)) {
+        el.classList.remove('hid');
+        var per = data.itemsPerPage || (data.organizations ? data.organizations.length : 0);
+        var start = ((data.currentPage || 1) - 1) * per + 1;
+        var end = start + (data.organizations ? data.organizations.length : 0) - 1;
+        var info = document.getElementById('secOrgPageInfo');
+        if (info) { info.innerText = 'Showing ' + start + '–' + end + (data.totalCount ? (' of ' + data.totalCount) : ''); }
+        var cur = document.getElementById('secCurrentPage');
+        if (cur) { cur.innerText = data.currentPage || 1; }
+        var prev = document.getElementById('secPrevPage');
+        if (prev) { prev.style.display = data.prevPage ? 'block' : 'none'; }
+        var next = document.getElementById('secNextPage');
+        if (next) { next.style.display = data.nextPage ? 'block' : 'none'; }
+    } else {
+        el.classList.add('hid');
+    }
+}
+
+function secPaginate(delta) {
+    secLoadOrgs(Math.max(1, secMgmt.orgPage + delta));
+    return false;
+}
+
+async function secOrgLookup() {
+    var input = document.getElementById('secOrgFilter');
+    var name = input ? (input.value || '').trim() : '';
+    if (!name) { secLoadOrgs(1); return; }
+    await secOpenOrg(name);
+}
+
+async function secOpenOrg(shortName) {
+    var detail = document.getElementById('secOrgDetail');
+    if (!detail) { return; }
+    var fb = new feedback(detail, 'spinner');
+    try {
+        secMgmtSetStatus('');
+        var org = await csClient.getOrgByName(shortName);
+        if (!org || org.error || !org.short_name) {
+            secMgmtSetStatus(secErr(org || ('Org ' + shortName + ' not found')), true);
+            detail.innerHTML = '';
+            return;
+        }
+        var quota = null, users = [];
+        try { quota = await csClient.getOrgIdQuotaFor(shortName); if (quota && quota.error) { quota = null; } } catch (e) { quota = null; }
+        try { var ur = await csClient.getOrgUsersFor(shortName); users = (ur && ur.users) ? ur.users : []; } catch (e) { users = []; }
+        detail.innerHTML = cveRender({ ctemplate: 'secOrgDetailView', org: org, quota: quota, users: users });
+        if (detail.scrollIntoView) { detail.scrollIntoView({ block: 'nearest' }); }
+    } catch (e) {
+        secMgmtSetStatus(secErr(e), true);
+    } finally {
+        fb.cancel();
+    }
+}
+
+function secShowCreateOrg() {
+    var slot = document.getElementById('secOrgCreate');
+    if (!slot) { return; }
+    slot.classList.remove('hid');
+    slot.innerHTML = cveRender({ ctemplate: 'secCreateOrgForm' });
+}
+
+async function secCreateOrg(event, form) {
+    if (event && event.preventDefault) { event.preventDefault(); }
+    var roles = secCheckedRoles(form);
+    if (!roles.length) { cveShowError('Select at least one role.'); return false; }
+    var body = {
+        short_name: form.short_name.value.trim(),
+        name: form.name.value.trim(),
+        authority: { active_roles: roles },
+        policies: { id_quota: parseInt(form.id_quota.value, 10) || 0 }
+    };
+    try {
+        var r = await csClient.createOrg(body);
+        if (r && r.error) { cveShowError(r); return false; }
+        var slot = document.getElementById('secOrgCreate');
+        if (slot) { slot.classList.add('hid'); slot.innerHTML = ''; }
+        secMgmtSetStatus(body.short_name + ' created.');
+        await secLoadOrgs(1);
+        await secOpenOrg(body.short_name);
+    } catch (e) {
+        cveShowError(e);
+    }
+    return false;
+}
+
+async function secEditOrg(shortName) {
+    var detail = document.getElementById('secOrgDetail');
+    if (!detail) { return; }
+    var slot = detail.querySelector('#secEditSlot');
+    if (!slot) {
+        slot = document.createElement('div');
+        slot.id = 'secEditSlot';
+        slot.className = 'gap';
+        detail.appendChild(slot);
+    }
+    try {
+        var org = await csClient.getOrgByName(shortName);
+        if (!org || org.error) { cveShowError(org || 'Org not found'); return; }
+        var quota = null;
+        try { quota = await csClient.getOrgIdQuotaFor(shortName); if (quota && quota.error) { quota = null; } } catch (e) { quota = null; }
+        slot.innerHTML = cveRender({ ctemplate: 'secEditOrgForm', org: org, roles: secActiveRoles(org), quota: quota });
+    } catch (e) {
+        cveShowError(e);
+    }
+}
+
+async function secSubmitEditOrg(event, form, shortName) {
+    if (event && event.preventDefault) { event.preventDefault(); }
+    try {
+        var org = await csClient.getOrgByName(shortName);
+        var current = secActiveRoles(org).map(function (r) { return String(r).toUpperCase(); });
+        var wanted = secCheckedRoles(form).map(function (r) { return String(r).toUpperCase(); });
+        var addRoles = wanted.filter(function (r) { return current.indexOf(r) < 0; });
+        var removeRoles = current.filter(function (r) { return wanted.indexOf(r) < 0; });
+        var params = {};
+        if (form.name.value.trim() && form.name.value.trim() !== org.name) { params.name = form.name.value.trim(); }
+        if (form.new_short_name.value.trim()) { params.new_short_name = form.new_short_name.value.trim(); }
+        var q = parseInt(form.id_quota.value, 10);
+        if (!isNaN(q)) { params.id_quota = q; }
+        if (addRoles.length) { params['active_roles.add'] = addRoles; }
+        if (removeRoles.length) { params['active_roles.remove'] = removeRoles; }
+        if (Object.keys(params).length === 0) { secMgmtSetStatus('No changes.'); return false; }
+        var r = await csClient.updateOrg(shortName, params);
+        if (r && r.error) { cveShowError(r); return false; }
+        secMgmtSetStatus(shortName + ' updated.');
+        var newName = params.new_short_name || shortName;
+        await secLoadOrgs(secMgmt.orgPage);
+        await secOpenOrg(newName);
+    } catch (e) {
+        cveShowError(e);
+    }
+    return false;
+}
+
+async function secSetQuota(shortName, current) {
+    var v = window.prompt('New ID quota for ' + shortName + ':', current);
+    if (v === null) { return; }
+    var n = parseInt(v, 10);
+    if (isNaN(n) || n < 0) { cveShowError('Quota must be a non-negative number.'); return; }
+    try {
+        var r = await csClient.setOrgIdQuota(shortName, n);
+        if (r && r.error) { cveShowError(r); return; }
+        secMgmtSetStatus('Quota for ' + shortName + ' set to ' + n + '.');
+        await secOpenOrg(shortName);
+        secLoadOrgs(secMgmt.orgPage);
+    } catch (e) {
+        cveShowError(e);
+    }
+}
+
+function secShowAddUser(shortName) {
+    var slot = document.getElementById('secAddUserSlot');
+    if (!slot) { return; }
+    slot.innerHTML = cveRender({ ctemplate: 'secAddUserForm', shortName: shortName });
+}
+
+function secShowSecret(message, secret) {
+    var sd = document.getElementById('secretDialog');
+    var sf = document.getElementById('secretDialogForm');
+    var um = document.getElementById('userMessage');
+    if (sd && sf) {
+        sf.pass.value = secret;
+        sf.pass.type = 'password';
+        if (um) { um.innerText = message || ''; }
+        sd.showModal();
+    } else {
+        cveShowError({ error: 'API secret', message: (message || '') + ' Secret: ' + secret });
+    }
+}
+
+async function secSubmitAddUser(event, form, shortName) {
+    if (event && event.preventDefault) { event.preventDefault(); }
+    var roles = [];
+    if (form.admin && form.admin.checked) { roles.push('ADMIN'); }
+    var userInfo = {
+        username: form.username.value.trim(),
+        name: { first: form.first.value.trim(), last: form.last.value.trim() },
+        authority: { active_roles: roles }
+    };
+    try {
+        var r = await csClient.createOrgUserFor(shortName, userInfo);
+        if (r && r.error) { cveShowError(r); return false; }
+        var slot = document.getElementById('secAddUserSlot');
+        if (slot) { slot.innerHTML = ''; }
+        if (r && r.created && r.created.secret) {
+            secShowSecret(r.message || (userInfo.username + ' created.'), r.created.secret);
+        }
+        await secOpenOrg(shortName);
+    } catch (e) {
+        cveShowError(e);
+    }
+    return false;
+}
+
+async function secResetUser(shortName, username) {
+    if (!window.confirm('Reset API key for ' + username + ' in ' + shortName + '? The old key stops working.')) { return; }
+    try {
+        var r = await csClient.resetOrgUserApiKeyFor(shortName, username);
+        if (r && r.error) { cveShowError(r); return; }
+        if (r && r['API-secret']) {
+            secShowSecret('API key reset for ' + username + '.', r['API-secret']);
+        }
+    } catch (e) {
+        cveShowError(e);
+    }
+}
+
+async function secToggleAdmin(shortName, username, isAdmin) {
+    var params = {};
+    if (isAdmin) { params['active_roles.remove'] = 'ADMIN'; } else { params['active_roles.add'] = 'ADMIN'; }
+    try {
+        var r = await csClient.updateOrgUserFor(shortName, username, params);
+        if (r && r.error) { cveShowError(r); return; }
+        await secOpenOrg(shortName);
+    } catch (e) {
+        cveShowError(e);
+    }
+}
+
+async function secToggleActive(shortName, username, isActive) {
+    try {
+        var r = await csClient.updateOrgUserFor(shortName, username, { active: isActive ? 'false' : 'true' });
+        if (r && r.error) { cveShowError(r); return; }
+        await secOpenOrg(shortName);
+    } catch (e) {
+        cveShowError(e);
     }
 }
 
