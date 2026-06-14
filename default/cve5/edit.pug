@@ -86,7 +86,7 @@ block append scripts
             if(!id){ return; }
             fetch('/cve5/' + id + '/folder', {method:'POST', credentials:'same-origin', headers:{'CSRF-Token': el.getAttribute('data-csrf'), 'Content-Type':'application/x-www-form-urlencoded'}, body:'folder=' + encodeURIComponent(el.value)})
                 .then(function(r){ return r.json(); })
-                .then(function(j){ if(j && j.type === 'ok'){ el.style.borderColor = '#469090'; setTimeout(function(){ el.style.borderColor = ''; }, 800); } })
+                .then(function(j){ if(j && j.type === 'ok'){ el.style.borderColor = 'var(--acc)'; setTimeout(function(){ el.style.borderColor = ''; }, 800); } })
                 .catch(function(){});
         }
     - var compileScript = pugLib.compileFileClient('default/cve5/cvelist.pug', {name: "cveRender", basedir: '', compileDebug: false,inlineRuntimeFunctions: true})

@@ -335,10 +335,31 @@ button.json-editor-btn-delete {
 #render.render table th { text-align:center;background-color:#88888822;}
 #render.render table td { padding:5px;border: 1px solid #888}
 
-/* CNA Internal Workflow: theme json-editor "categories" tabs to match the editor.
-   The html theme sets inline opacity/background on each tab, so we override with
-   !important; the active tab is the one json-editor leaves at inline opacity:1. */
-.tabs.je-tabholder--top { display: flex; flex-wrap: wrap; gap: 3px; margin: 0 0 .7em 0 !important; border-bottom: 2px solid rgba(70,144,144,.25); padding: 0; }
-.tabs.je-tabholder--top .je-tab--top { opacity: 1 !important; background: transparent !important; color: #36353f; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; padding: 6px 16px !important; margin: 0 !important; cursor: pointer; font-size: 14px; line-height: 1.6; white-space: nowrap; width: auto !important; float: none !important; text-align: center; }
-.tabs.je-tabholder--top .je-tab--top:hover { background: rgba(70,144,144,.10) !important; }
-.tabs.je-tabholder--top .je-tab--top[style*="opacity: 1"] { color: #469090; font-weight: 600; background: #fff !important; border-color: rgba(70,144,144,.35); border-bottom: 2px solid #469090; margin-bottom: -2px !important; }
+/* CNA Internal Workflow: render the json-editor "categories" tabs identically to
+   the native editor tabs (input.tab + .lbl, see public/css/min.css). Uses the theme
+   variables --bg1/--bg2/--bor/--txt so the tabs follow light AND dark mode; the html
+   theme writes inline opacity/background on each tab, so the active state (inline
+   opacity:1) and backgrounds are overridden with !important. */
+.tabs.je-tabholder--top { display: flex !important; flex-wrap: wrap; align-items: flex-end; gap: 0; margin: 0 !important; padding: 0 0 0 .25em; border: 0; border-bottom: 1px solid var(--bor); }
+.tabs.je-tabholder--top .je-tab--top { opacity: 1 !important; display: inline-flex; align-items: center; white-space: nowrap; box-sizing: content-box; color: var(--txt); background: var(--bg2) !important; border: 1px solid var(--bor); border-bottom: 0; border-radius: .5em .5em 0 0; padding: .3em 1em !important; margin: 0 0 0 .25em !important; line-height: 25px; font-size: 100%; cursor: pointer; width: auto !important; float: none !important; transition: background-color 0.3s ease; }
+.tabs.je-tabholder--top .je-tab--top:hover { background: var(--bg1) !important; }
+.tabs.je-tabholder--top .je-tab--top[style*="opacity: 1"] { color: var(--txt); background: var(--bg1) !important; border-bottom: 1px solid var(--bg1); margin-bottom: -1px !important; position: relative; z-index: 3; }
+
+/* CNA Internal Workflow > People: render the multi-user fields (assignees/reviewers/
+   approvers, "checkbox" format) as a segmented pill row identical to the owner radio
+   group (.rdg in min.css) — the checkbox input is hidden, each option's label is the
+   pill, and the checked option gets the accent border. Variable-driven for dark mode.
+   The label sits inline-left of the pills, matching the owner row. */
+[data-schemapath$="assignees"] .control-group, [data-schemapath$="reviewers"] .control-group, [data-schemapath$="approvers"] .control-group { display: flex; align-items: center; flex-wrap: wrap; gap: .5em; }
+[data-schemapath$="assignees"] .control-group > b, [data-schemapath$="reviewers"] .control-group > b, [data-schemapath$="approvers"] .control-group > b { font-weight: 400; color: var(--txt); margin: 0; min-width: 7em; }
+[data-schemapath$="assignees"] .form-control, [data-schemapath$="reviewers"] .form-control, [data-schemapath$="approvers"] .form-control { display: inline-flex; flex-wrap: wrap; vertical-align: middle; }
+[data-schemapath$="assignees"] .form-control > label, [data-schemapath$="reviewers"] .form-control > label, [data-schemapath$="approvers"] .form-control > label { display: inline-flex; align-items: center; cursor: pointer; border: 1px solid var(--bor); margin: 0 0 0 -1px; padding: .5em; background-color: var(--wht); color: var(--txt); white-space: nowrap; }
+[data-schemapath$="assignees"] .form-control > label input.je-checkbox, [data-schemapath$="reviewers"] .form-control > label input.je-checkbox, [data-schemapath$="approvers"] .form-control > label input.je-checkbox { display: none; }
+[data-schemapath$="assignees"] .form-control > label:has(input:checked), [data-schemapath$="reviewers"] .form-control > label:has(input:checked), [data-schemapath$="approvers"] .form-control > label:has(input:checked) { background-color: var(--bg2); border-color: var(--acc); z-index: 1; }
+[data-schemapath$="assignees"] .form-control > label:first-of-type, [data-schemapath$="reviewers"] .form-control > label:first-of-type, [data-schemapath$="approvers"] .form-control > label:first-of-type { border-radius: 5px 0 0 5px; }
+[data-schemapath$="assignees"] .form-control > label:last-of-type, [data-schemapath$="reviewers"] .form-control > label:last-of-type, [data-schemapath$="approvers"] .form-control > label:last-of-type { border-radius: 0 5px 5px 0; }
+
+/* Plain textareas (e.g. the workflow "Internal notes") have no background rule in
+   min.css, so they fall back to white — jarring in dark mode. Theme them like the
+   other editor inputs (var(--wht) is #fff in light, #000 in dark). */
+.editor textarea { background-color: var(--wht); color: var(--txt); }

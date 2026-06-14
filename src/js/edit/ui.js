@@ -1114,6 +1114,11 @@ JSONEditor.defaults.themes.customTheme = class customTheme extends JSONEditor.Ab
         }
     }
     removeInputError(input) {
+        // Some editors (e.g. the array multi-checkbox) have no single `input`
+        // element, so json-editor calls this with undefined. Guard against it —
+        // otherwise `input.style.border` throws and aborts the whole editor build,
+        // leaving the loading overlay in place (the "broken editor" symptom).
+        if (!input) return;
         try{
         input.setCustomValidity('');
         } catch(e) {}
