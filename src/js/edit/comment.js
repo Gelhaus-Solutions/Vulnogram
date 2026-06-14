@@ -99,6 +99,46 @@ function itemDelete(url, id, cb) {
     }
 }
 
+// Flip an attachment between private and public. Public files are downloadable
+// without authentication; on success we surface (and copy) the public URL so the
+// operator can paste it into the CVE references with the "exploit" tag as a PoC.
+function togglePublic(el) {
+    var fileLink = el.parentNode.parentNode.firstChild.firstChild;
+    var filename = fileLink.textContent;
+    var url = window.location.pathname + '/file/' + encodeURIComponent(filename) + '/visibility';
+    fetch(url, {
+        method: 'POST',
+        credentials: 'include',
+        redirect: 'error',
+        headers: {
+            'Accept': 'application/json, text/plain, */*',
+            'CSRF-Token': csrfToken
+        }
+    }).then(function (response) {
+        return response.json();
+    }).then(function (data) {
+        if (data && data.ok) {
+            getFiles();
+            if (data.public) {
+                var fullUrl = window.location.origin + data.url;
+                infoMsg.textContent = 'Public link (add to References with the "exploit" tag): ' + fullUrl;
+                errMsg.textContent = '';
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(fullUrl).catch(function () { });
+                }
+            } else {
+                infoMsg.textContent = 'Attachment is now private.';
+                errMsg.textContent = '';
+            }
+        } else {
+            errMsg.textContent = 'Error: ' + ((data && data.msg) || 'could not change visibility');
+            infoMsg.textContent = '';
+        }
+    }).catch(function () {
+        alert('Error changing visibility! Try reloading the page.');
+    });
+}
+
 async function getChanges(id) {
     var json = await getSubDocs('log', id);
     changelog.innerHTML = subdocRender({

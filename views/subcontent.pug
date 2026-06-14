@@ -15,8 +15,9 @@ mixin files
     
 mixin fileList
         if(files && files.length>0)
-                - fields = {name: {href:'/'+schemaName+'/' + doc_id + '/file/', class: 'icn ', target:'_blank', xref: {class: 'type'}}, user: {class: 'ico'}, delete: {class: 'ico delete',onclick:'fileDelete(this)'}};
-                +table(files, ['name','comment','size','updatedAt','user','delete'])
+                - files = files.map(function(f){ return Object.assign({}, f, {public: f.public === true}); });
+                - fields = {name: {href:'/'+schemaName+'/' + doc_id + '/file/', class: 'icn ', target:'_blank', xref: {class: 'type'}}, user: {class: 'ico'}, public: {onclick:'togglePublic(this)', class:'ico pointer', icons:{'true':'globe','false':'lock'}, titles:{'true':'Public — anyone with the link can download. Click to make private.','false':'Private — only authorized users. Click to make public.'}}, delete: {class: 'ico delete',onclick:'fileDelete(this)'}};
+                +table(files, ['name','comment','size','updatedAt','user','public','delete'])
 
 mixin commentBox
     #commentTemplate.hid

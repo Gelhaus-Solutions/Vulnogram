@@ -802,7 +802,9 @@ module.exports = function (name, opts) {
     router.use(onedoc.router);
     if (opts.conf.files) {
         var attachment = require('./attachments');
-        router.use(attachment(Document, opts));
+        var att = attachment(Document, opts);
+        router.use(att.router);
+        module.publicRouter = att.publicRouter;
     }
     router.use(comments(Document, opts));
 

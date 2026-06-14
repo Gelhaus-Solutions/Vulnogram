@@ -125,12 +125,20 @@ mixin hyperVal(obj, name)
                                 +hyperVal(v, name)
                                 |  
                         else
+                            - var hideText = false;
+                            - var cellTitle = value;
                             if (typeof value === 'string') && value.match(/^[a-zA-Z0-9\-_]{1,30}$/) || typeof value === 'boolean'
                                 if(fields[name].icons && fields[name].icons[value])
                                     - cls = (cls ? cls + ' ' : '')+ 'vgi-'+fields[name].icons[value]
+                                    - if (typeof value === 'boolean') { hideText = true; }
                                 else
                                     - cls = (cls ? cls + ' ' : '')+ value
-                            span(class=cls title=value onclick=onclick)=value
+                            if fields[name].titles && (fields[name].titles[value] !== undefined)
+                                - cellTitle = fields[name].titles[value]
+                            if hideText
+                                span(class=cls title=cellTitle onclick=onclick)
+                            else
+                                span(class=cls title=cellTitle onclick=onclick)=value
                 else
                     =value
 

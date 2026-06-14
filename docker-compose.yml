@@ -31,9 +31,13 @@ services:
     env_file:
       - ${ENV_VAR_PATH:-example.env}
 
+    volumes:
+      - vulnogram-files:/home/vulnogram/files
+
     depends_on:
       vulnogram-mongo:
         condition: service_healthy
 
 volumes:
   vulnogram-mongo-data:
+  vulnogram-files:

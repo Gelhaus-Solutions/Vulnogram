@@ -14,6 +14,10 @@ RUN npm install
 USER root
 COPY . /home/vulnogram/
 
+# Attachment storage dir (opts.conf.files). Created here owned by the vulnogram
+# user so an empty named volume mounted at this path inherits writable ownership.
+RUN mkdir -p /home/vulnogram/files
+
 RUN chown vulnogram:vulnogram --recursive .
 USER vulnogram
 

@@ -297,6 +297,12 @@ async function bootstrap() {
         if (s.facet && s.facet.ID) {
             app.locals.confOpts[section] = s;
             let r = docs(section, app.locals.confOpts[section]);
+            // Public, unauthenticated attachment downloads must be reachable
+            // without login, so mount the public router BEFORE ensureAuthenticated.
+            // Unmatched paths fall through to the authenticated router below.
+            if (r.publicRouter) {
+                app.use('/' + section, r.publicRouter);
+            }
             app.use('/' + section, ensureAuthenticated, r.router);
         }
     }
