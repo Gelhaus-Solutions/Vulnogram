@@ -42,9 +42,24 @@
 
         // Session mgmt
 
-        login(user, org, key) {
+        login(user, org, key, remember) {
             //console.log('called login');
-            return this._middleware.setCredentials({ user, org, key });
+            return this._middleware.setCredentials({ user, org, key, remember: !!remember });
+        }
+
+        // Restore a session from the persistent "remember" store (key stays in SW).
+        loginRemembered(org, user) {
+            return this._middleware.send({ type: 'loginRemembered', org, user });
+        }
+
+        // Whether an encrypted key is remembered on this device for org/user.
+        hasRemembered(org, user) {
+            return this._middleware.send({ type: 'hasRemembered', org, user });
+        }
+
+        // Delete the remembered key for org/user.
+        forgetKey(org, user) {
+            return this._middleware.send({ type: 'forget', org, user });
         }
 
         logout() {

@@ -16,6 +16,11 @@ const keyname = "cve-services.vulnogramkeyStore";
 const encrypt_storage_version = "1.1.14";
 const cacheName = 'private';
 const cacheURL = '/creds';
+// Opt-in "remember API key" store. Unlike the session cache (cacheURL) this is
+// NOT cleared on session timeout, only on explicit logout / forget, so the key
+// can auto-restore a session across timeouts and page reloads. The key stays
+// encrypted at rest with the per-user RSA key and never leaves the worker.
+const rememberCacheURL = (org, user) => '/creds-remember/' + encodeURIComponent(org) + '/' + encodeURIComponent(user);
 
 destroySession = () => {
     if ('creds' in storage) {
@@ -38,24 +43,65 @@ setSessionTimer = () => {
 };
 
 setCredentials = (e) => {
-    storage.creds = e.data.creds;
+    let remember = !!e.data.creds.remember;
+    storage.creds = { user: e.data.creds.user, org: e.data.creds.org, key: e.data.creds.key };
     check_create_key(e.data.creds.user).then(function (newkey) {
         encryptMessage(e.data.creds.key, newkey.publicKey)
             .then(function (encBuffer) {
                 arrayBuffertoURI(encBuffer)
                     .then(function (encURL) {
-                        let f = JSON.parse(JSON.stringify(e.data.creds));
-                        delete f['key'];
-                        f['keyURL'] = encURL;
+                        let f = { user: e.data.creds.user, org: e.data.creds.org, keyURL: encURL };
                         clientReply(e, { data: "ok" });
                         caches.open(cacheName).then(function (cache) {
-                            let cachecreds = new Response(JSON.stringify(f));
-                            cache.put(cacheURL, cachecreds);
+                            cache.put(cacheURL, new Response(JSON.stringify(f)));
+                            if (remember) {
+                                cache.put(rememberCacheURL(f.org, f.user), new Response(JSON.stringify(f)));
+                            }
                         });
                         setSessionTimer();
                     });
             });
     });
+};
+
+// Restore a session from the persistent "remember" store (no key exposed to page).
+loginRemembered = async (e) => {
+    try {
+        let { org, user } = e.data;
+        let cache = await caches.open(cacheName);
+        let resp = await cache.match(rememberCacheURL(org, user));
+        if (!resp) { return clientReply(e, { error: "NO_REMEMBER" }); }
+        let result = await resp.json();
+        let ekey = await check_create_key(result.user);
+        let encBuffer = URItoarrayBuffer(result.keyURL);
+        let rawKey = await decryptMessage(encBuffer, ekey.privateKey);
+        storage.creds = { user: result.user, org: result.org, key: rawKey };
+        await cache.put(cacheURL, new Response(JSON.stringify({ user: result.user, org: result.org, keyURL: result.keyURL })));
+        setSessionTimer();
+        clientReply(e, { data: "ok" });
+        let bc = new BroadcastChannel('login');
+        bc.postMessage({ message: 'The user has logged in' });
+    } catch (err) {
+        clientReply(e, { error: "NO_REMEMBER" });
+    }
+};
+
+hasRemembered = async (e) => {
+    try {
+        let cache = await caches.open(cacheName);
+        let resp = await cache.match(rememberCacheURL(e.data.org, e.data.user));
+        clientReply(e, { remembered: !!resp });
+    } catch (err) {
+        clientReply(e, { remembered: false });
+    }
+};
+
+forgetRemembered = async (e) => {
+    try {
+        let cache = await caches.open(cacheName);
+        await cache.delete(rememberCacheURL(e.data.org, e.data.user));
+    } catch (err) { /* ignore */ }
+    clientReply(e, "ok");
 };
 
 clientReply = (e, msg) => {
@@ -170,6 +216,15 @@ self.onmessage = e => {
             break;
         case 'login':
             setCredentials(e);
+            break;
+        case 'loginRemembered':
+            loginRemembered(e);
+            break;
+        case 'hasRemembered':
+            hasRemembered(e);
+            break;
+        case 'forget':
+            forgetRemembered(e);
             break;
         case 'request':
             checkSession(e).then(function (success) {

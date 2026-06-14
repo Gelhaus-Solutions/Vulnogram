@@ -37,6 +37,9 @@ mixin cveLoginBox
                 span.txt-icon-wrap
                     span.txt-input-icon.vgi-key
                     input#cpKey.bor.txt.txt-has-icon(name='key', type='password', autocomplete='off' required=true)
+                label.lbl(title="Stores your API key encrypted on this device so you don't re-enter it. Cleared on Logout.")
+                    input#cpRemember(type="checkbox", name="remember")
+                    |  Remember API key on this device
                 b
                 span 
                     input#cpSubmit.bor.fbn.sfe.vgi-export(type='submit', value='Login')
@@ -193,7 +196,7 @@ mixin userstats
             hr.bort
             span.vgi-import.fbn(onclick="cveSwitchLogin()") Switch login
             |
-            span.vgi-exit.fbn(onclick="portalLogout()") Logout!
+            span.vgi-exit.fbn(onclick="portalLogout('', true)" title="Logs out and forgets any remembered API key on this device") Logout!
 
 mixin userDetail(u)
     a.td(onclick="cveUserEdit(this)", u=u.username, f=u.name?u.name.first:'', l=u.name?u.name.last:'', ac=u.active, ad=u.authority.active_roles.includes('ADMIN') title="Edit Info")

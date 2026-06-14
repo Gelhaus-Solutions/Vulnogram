@@ -272,6 +272,13 @@ async function showPortalViewOrLogin() {
         return false;
     }
     if (!hasSession) {
+        var autoOk = false;
+        try { autoOk = await tryRememberedAutoLogin(); } catch (e) { autoOk = false; }
+        if (autoOk) {
+            await showPortalView();
+            setPortalSidebarState(true);
+            return true;
+        }
         showPortalLogin();
         setPortalSidebarState(true);
         return false;
@@ -279,6 +286,29 @@ async function showPortalViewOrLogin() {
     await showPortalView();
     setPortalSidebarState(true);
     return true;
+}
+
+// Auto-login from a remembered (encrypted, on-device) key for the last org/user.
+async function tryRememberedAutoLogin() {
+    var org = (csCache && csCache.org) || window.localStorage.getItem('shortName');
+    var user = csCache && csCache.user;
+    if (!user) {
+        try { user = (JSON.parse(window.localStorage.getItem('cveApi') || '{}')).user; } catch (e) { user = null; }
+    }
+    if (!org || !user || !csClient) { return false; }
+    var has = await csClient.hasRemembered(org, user);
+    if (!has || !has.remembered) { return false; }
+    try {
+        var r = await csClient.loginRemembered(org, user);
+        if (r === 'ok' || (r && r.data === 'ok')) {
+            csCache.org = org;
+            csCache.user = user;
+            window.localStorage.setItem('shortName', org);
+            window.localStorage.setItem('cveApi', JSON.stringify(csCache));
+            return true;
+        }
+    } catch (e) { /* NO_REMEMBER */ }
+    return false;
 }
 
 function portalFocusEditor() {
@@ -819,7 +849,12 @@ function showPortalLogin(message) {
     cnaLoadProfiles();
 }
 
-async function portalLogout(message) {
+async function portalLogout(message, forget) {
+    // Explicit logout (forget=true) also clears the remembered key so the user
+    // stays logged out; the auto session timeout keeps it (forget falsy).
+    if (forget && csClient && csCache.org && csCache.user) {
+        try { await csClient.forgetKey(csCache.org, csCache.user); } catch (e) { /* ignore */ }
+    }
     if (csClient != null) {
         await csClient.logout();
     }
@@ -835,7 +870,7 @@ async function portalLogout(message) {
 // Log out of the current CVE Services session and reopen the login box (which
 // shows the saved-login picker), so a user can switch between saved CNA profiles.
 async function cveSwitchLogin() {
-    await portalLogout();
+    await portalLogout('', true);
     if (typeof showPortalLogin === 'function') {
         showPortalLogin();
     }
@@ -960,11 +995,17 @@ async function portalLogin(elem, credForm) {
         elem.preventDefault();
         var url = normalizePortalUrl(credForm.portal.value);
         var portalType = credForm.portal.options[credForm.portal.selectedIndex].text;
+        var remember = !!(credForm.remember && credForm.remember.checked);
         csClient = ensureCsClient(url);
         var ret = await csClient.login(
             credForm.user.value,
             credForm.org.value,
-            credForm.key.value);
+            credForm.key.value,
+            remember);
+        if (!remember) {
+            // Clear any previously remembered key for this login.
+            try { await csClient.forgetKey(credForm.org.value, credForm.user.value); } catch (e) { /* ignore */ }
+        }
 
 
         var orgInfo = await csClient.getOrgInfo();
