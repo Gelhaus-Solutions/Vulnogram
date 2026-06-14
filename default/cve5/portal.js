@@ -834,7 +834,34 @@ function cnaProfileSelect(sel) {
             if (portalEl.options[i].value === p.serviceUrl) { portalEl.selectedIndex = i; break; }
         }
     }
-    if (keyEl) { keyEl.focus(); }
+    // If this saved login has a remembered API key on this device, auto-login
+    // instead of asking the user to re-enter it.
+    (async function () {
+        try {
+            var url = normalizePortalUrl(p.serviceUrl || (portalEl ? portalEl.value : csCache.url));
+            csClient = ensureCsClient(url);
+            var has = await csClient.hasRemembered(p.org, p.user);
+            if (has && has.remembered) {
+                var r = await csClient.loginRemembered(p.org, p.user);
+                if (r === 'ok' || (r && r.data === 'ok')) {
+                    csCache.org = p.org;
+                    csCache.user = p.user;
+                    csCache.url = url;
+                    csCache.portalType = portalEl ? portalEl.options[portalEl.selectedIndex].text : csCache.portalType;
+                    window.localStorage.setItem('shortName', p.org);
+                    window.localStorage.setItem('portalType', csCache.portalType);
+                    window.localStorage.setItem('portalUrl', url);
+                    window.localStorage.setItem('cveApi', JSON.stringify(csCache));
+                    await refreshRecentCveEntries(p.org);
+                    await showPortalView();
+                    setPortalSidebarState(true);
+                    setTimeout(portalLogout, defaultTimeout);
+                    return;
+                }
+            }
+        } catch (e) { /* fall through to manual entry */ }
+        if (keyEl) { keyEl.focus(); }
+    })();
 }
 
 function showPortalLogin(message) {
@@ -870,7 +897,9 @@ async function portalLogout(message, forget) {
 // Log out of the current CVE Services session and reopen the login box (which
 // shows the saved-login picker), so a user can switch between saved CNA profiles.
 async function cveSwitchLogin() {
-    await portalLogout('', true);
+    // Keep remembered keys so the user can pick another saved login that
+    // auto-logs in; only explicit Logout forgets the key.
+    await portalLogout();
     if (typeof showPortalLogin === 'function') {
         showPortalLogin();
     }

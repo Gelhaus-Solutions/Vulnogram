@@ -37,9 +37,10 @@ mixin cveLoginBox
                 span.txt-icon-wrap
                     span.txt-input-icon.vgi-key
                     input#cpKey.bor.txt.txt-has-icon(name='key', type='password', autocomplete='off' required=true)
-                label.lbl(title="Stores your API key encrypted on this device so you don't re-enter it. Cleared on Logout.")
-                    input#cpRemember(type="checkbox", name="remember")
-                    |  Remember API key on this device
+                center.gap
+                    label.lbl(title="Stores your API key encrypted on this device so you don't re-enter it. Cleared on Logout.")
+                        input#cpRemember(type="checkbox", name="remember")
+                        |  Remember API key on this device
                 b
                 span 
                     input#cpSubmit.bor.fbn.sfe.vgi-export(type='submit', value='Login')
@@ -113,18 +114,20 @@ mixin portal
                                                 option(value=j selected=(reserveSelectedYear == String(j)))=j
                                                 - j--;
 
-        if idQuota
-            .flx#cveQuota(title="CVE ID quota for " + (org ? org.short_name : 'this org'))
-                span.lbl.vgi-tag.nobr
-                    span.tgrey Quota&nbsp;
-                    b=idQuota.id_quota
-                span.lbl.nobr
-                    span.tgrey reserved&nbsp;
-                    b=idQuota.total_reserved
-                span.lbl.nobr(class=(typeof idQuota.available === 'number' && idQuota.available <= 0) ? 'tred' : '')
-                    span.tgrey available&nbsp;
-                    b=idQuota.available
         .flx
+            if idQuota
+                details.popup#cveQuotaPopup(ontoggle="if(this.open){var u=document.getElementById('userStatsPopup');if(u)u.open=false;var l=document.getElementById('userListPopup');if(l)l.open=false;}")
+                    summary.fbn.vgi-tag(title="CVE ID quota for " + (org ? org.short_name : 'this org')) Quota
+                        |  ▼
+                    dl.pop.wht.bor.rnd.shd.pad
+                        .gap.row
+                            button.right.rbtn.vgi-x(onclick="this.closest('details').removeAttribute('open')")
+                        dt Quota (hard limit):
+                            b=idQuota.id_quota
+                        dt Reserved:
+                            b=idQuota.total_reserved
+                        dt Available:
+                            b(class=(typeof idQuota.available === 'number' && idQuota.available <= 0) ? 'tred' : '')=idQuota.available
             label#cveUser
                 +userstats
             if userInfo && userInfo.authority && userInfo.authority.active_roles && userInfo.authority.active_roles.includes("ADMIN")
@@ -436,12 +439,13 @@ mixin mgmtPortalShell
     header.pad.ban
         .left.flx
             label.lbl(class=scopeIcon)
-                b=scopeTitle
+                if orgInfo
+                    b=orgInfo.short_name
+                else
+                    b=scopeTitle
         .flx
-            if orgInfo
-                span.lbl.vgi-org.nobr(title="Logged in org")= orgInfo.short_name
-                if orgInfo.authority && orgInfo.authority.active_roles
-                    span.sml.tgrey.nobr  (#{orgInfo.authority.active_roles.join(', ')})
+            if orgInfo && orgInfo.authority && orgInfo.authority.active_roles
+                span.lbl.vgi-king.nobr(title="Active roles")= orgInfo.authority.active_roles.join(', ')
     .pad(id=pfx + 'MgmtStatus')
     div(id=pfx + 'MgmtBody').gap
         center.pad2
@@ -581,19 +585,21 @@ mixin secOrgDetailView
                     td(colspan=5)
                         i No users.
 
-mixin secRoleChecks
-    label.lbl
-        input(type="checkbox", name="role", value="CNA", checked=(typeof roles==='undefined' || roles.indexOf('CNA')>=0))
-        |  CNA
-    label.lbl
-        input(type="checkbox", name="role", value="ADP", checked=(typeof roles!=='undefined' && roles.indexOf('ADP')>=0))
-        |  ADP
-    label.lbl
-        input(type="checkbox", name="role", value="ROOT_CNA", checked=(typeof roles!=='undefined' && roles.indexOf('ROOT_CNA')>=0))
-        |  ROOT_CNA
-    label.lbl
-        input(type="checkbox", name="role", value="SECRETARIAT", checked=(typeof roles!=='undefined' && roles.indexOf('SECRETARIAT')>=0))
-        |  SECRETARIAT
+mixin secRoleChecks(pfx)
+    - var have = (typeof roles !== 'undefined' && roles) ? roles : (pfx === 'c' ? ['CNA'] : [])
+    .rdg
+        .form-control
+            input.hid(type="checkbox", id=pfx+"RoleCNA", name="role", value="CNA", checked=(have.indexOf('CNA')>=0))
+            label.lbl.vgi-org(for=pfx+"RoleCNA") CNA
+        .form-control
+            input.hid(type="checkbox", id=pfx+"RoleADP", name="role", value="ADP", checked=(have.indexOf('ADP')>=0))
+            label.lbl.vgi-search(for=pfx+"RoleADP") ADP
+        .form-control
+            input.hid(type="checkbox", id=pfx+"RoleRoot", name="role", value="ROOT_CNA", checked=(have.indexOf('ROOT_CNA')>=0))
+            label.lbl.vgi-king(for=pfx+"RoleRoot") ROOT_CNA
+        .form-control
+            input.hid(type="checkbox", id=pfx+"RoleSec", name="role", value="SECRETARIAT", checked=(have.indexOf('SECRETARIAT')>=0))
+            label.lbl.vgi-cog(for=pfx+"RoleSec") SECRETARIAT
 
 mixin secCreateOrgForm
     form.sec.bor.rndx.pad.gap(onsubmit="return secCreateOrg(event, this);")
@@ -604,8 +610,7 @@ mixin secCreateOrgForm
             label.lbl(for="secNewName") Name
             input#secNewName.bor.txt(name="name", required=true, placeholder="ACME, Inc.")
             label.lbl Roles
-            .rdg
-                +secRoleChecks
+            +secRoleChecks('c')
             label.lbl(for="secNewQuota") ID quota
             input#secNewQuota.bor.txt(name="id_quota", type="number", min="0", max="100000", value="100")
         .gap
@@ -623,8 +628,7 @@ mixin secEditOrgForm
             label.lbl(for="secEditShort") New short name (optional)
             input#secEditShort.bor.txt(name="new_short_name", placeholder=org.short_name, pattern=".{2,32}")
             label.lbl Roles
-            .rdg
-                +secRoleChecks
+            +secRoleChecks('e')
             label.lbl(for="secEditQuota") ID quota
             input#secEditQuota.bor.txt(name="id_quota", type="number", min="0", max="100000", value=quota?quota.id_quota:'')
         .gap
