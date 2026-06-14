@@ -796,29 +796,37 @@ async function initCsClient() {
 // Saved CNA login profiles (item 6). Metadata only — the API key is never stored
 // server-side; the user still types it into the login box each session.
 var cnaProfilesCache = [];
+// Fetch saved CNA login profiles (and instance CVE Services endpoints) without
+// requiring any portal DOM. Also used by the auto-fetch ownership check below.
+async function cnaFetchProfiles() {
+    try {
+        var res = await fetch('/users/cna/json', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+        if (!res.ok) { return { profiles: [], services: [] }; }
+        var data = await res.json();
+        cnaProfilesCache = data.profiles || [];
+        return data;
+    } catch (e) {
+        return { profiles: [], services: [] };
+    }
+}
 async function cnaLoadProfiles() {
     var sel = document.getElementById('cpProfile');
     if (!sel) { return; }
-    try {
-        var res = await fetch('/users/cna/json', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
-        if (!res.ok) { return; }
-        var data = await res.json();
-        cnaProfilesCache = data.profiles || [];
-        sel.innerHTML = '<option value="">— manual entry —</option>' + cnaProfilesCache.map(function (p) {
-            return '<option value="' + p.id + '">' + String(p.label || (p.org + '/' + p.user)).replace(/</g, '&lt;') + '</option>';
+    var data = await cnaFetchProfiles();
+    sel.innerHTML = '<option value="">— manual entry —</option>' + cnaProfilesCache.map(function (p) {
+        return '<option value="' + p.id + '">' + String(p.label || (p.org + '/' + p.user)).replace(/</g, '&lt;') + '</option>';
+    }).join('');
+    // Repopulate the portal endpoint dropdown from instance-configured services.
+    var portalEl = document.getElementById('cpPortal');
+    if (portalEl && Array.isArray(data.services) && data.services.length) {
+        var current = portalEl.value;
+        portalEl.innerHTML = data.services.map(function (s) {
+            return '<option value="' + s.url + '">' + String(s.label || s.url).replace(/</g, '&lt;') + '</option>';
         }).join('');
-        // Repopulate the portal endpoint dropdown from instance-configured services.
-        var portalEl = document.getElementById('cpPortal');
-        if (portalEl && Array.isArray(data.services) && data.services.length) {
-            var current = portalEl.value;
-            portalEl.innerHTML = data.services.map(function (s) {
-                return '<option value="' + s.url + '">' + String(s.label || s.url).replace(/</g, '&lt;') + '</option>';
-            }).join('');
-            for (var i = 0; i < portalEl.options.length; i++) {
-                if (portalEl.options[i].value === current) { portalEl.selectedIndex = i; break; }
-            }
+        for (var i = 0; i < portalEl.options.length; i++) {
+            if (portalEl.options[i].value === current) { portalEl.selectedIndex = i; break; }
         }
-    } catch (e) { /* ignore */ }
+    }
 }
 function cnaProfileSelect(sel) {
     var p = cnaProfilesCache.find(function (x) { return x.id === sel.value; });
@@ -838,30 +846,48 @@ function cnaProfileSelect(sel) {
     // instead of asking the user to re-enter it.
     (async function () {
         try {
-            var url = normalizePortalUrl(p.serviceUrl || (portalEl ? portalEl.value : csCache.url));
-            csClient = ensureCsClient(url);
-            var has = await csClient.hasRemembered(p.org, p.user);
-            if (has && has.remembered) {
-                var r = await csClient.loginRemembered(p.org, p.user);
-                if (r === 'ok' || (r && r.data === 'ok')) {
-                    csCache.org = p.org;
-                    csCache.user = p.user;
-                    csCache.url = url;
-                    csCache.portalType = portalEl ? portalEl.options[portalEl.selectedIndex].text : csCache.portalType;
-                    window.localStorage.setItem('shortName', p.org);
-                    window.localStorage.setItem('portalType', csCache.portalType);
-                    window.localStorage.setItem('portalUrl', url);
-                    window.localStorage.setItem('cveApi', JSON.stringify(csCache));
-                    await refreshRecentCveEntries(p.org);
-                    await showPortalView();
-                    setPortalSidebarState(true);
-                    setTimeout(portalLogout, defaultTimeout);
-                    return;
-                }
-            }
+            if (await loginRememberedProfile(p)) { return; }
         } catch (e) { /* fall through to manual entry */ }
         if (keyEl) { keyEl.focus(); }
     })();
+}
+
+// Restore a saved CNA login from its remembered (on-device) key. Returns true on
+// success. With updateUI !== false it refreshes the portal panel/nav like the profile
+// picker does; pass false to switch the session silently (e.g. while probing CVE-ID
+// ownership across saved logins).
+async function loginRememberedProfile(p, updateUI) {
+    if (!p || !p.org || !p.user) { return false; }
+    var portalEl = document.getElementById('cpPortal');
+    var url = normalizePortalUrl(p.serviceUrl || (portalEl ? portalEl.value : csCache.url));
+    csClient = ensureCsClient(url);
+    var has = await csClient.hasRemembered(p.org, p.user);
+    if (!has || !has.remembered) { return false; }
+    var r = await csClient.loginRemembered(p.org, p.user);
+    if (!(r === 'ok' || (r && r.data === 'ok'))) { return false; }
+    csCache.org = p.org;
+    csCache.user = p.user;
+    csCache.url = url;
+    if (portalEl) {
+        var matched = false;
+        if (p.serviceUrl) {
+            for (var i = 0; i < portalEl.options.length; i++) {
+                if (portalEl.options[i].value === p.serviceUrl) { csCache.portalType = portalEl.options[i].text; matched = true; break; }
+            }
+        }
+        if (!matched && portalEl.selectedIndex >= 0) { csCache.portalType = portalEl.options[portalEl.selectedIndex].text; }
+    }
+    window.localStorage.setItem('shortName', p.org);
+    window.localStorage.setItem('portalType', csCache.portalType);
+    window.localStorage.setItem('portalUrl', url);
+    window.localStorage.setItem('cveApi', JSON.stringify(csCache));
+    if (updateUI !== false) {
+        await refreshRecentCveEntries(p.org);
+        await showPortalView();
+        setPortalSidebarState(true);
+        setTimeout(portalLogout, defaultTimeout);
+    }
+    return true;
 }
 
 function showPortalLogin(message) {
@@ -1801,6 +1827,176 @@ async function cveLoad(cveId) {
         }
     }
     return null;
+}
+
+// ---- Auto-fetch missing CVE records owned by a logged-in CNA -----------------
+// When the editor opens a CVE ID that isn't in the local database, the server shows
+// "ID not found". If the ID belongs to a CNA logged in / remembered on this device,
+// silently pull it from CVE Services and save a local copy so the error doesn't come
+// back. IDs that aren't ours are left for the manual Load box (view-only).
+
+// Ask CVE Services who owns a CVE ID using the current session. Returns
+// { state, owning_cna } or null when the id record can't be read (404 / not authorized).
+async function probeCveIdOwner(cveId) {
+    if (!csClient || typeof csClient.getCveId !== 'function') { return null; }
+    try {
+        var rec = await csClient.getCveId(cveId);
+        if (rec && (rec.owning_cna || rec.state)) {
+            return { state: rec.state, owning_cna: rec.owning_cna || null };
+        }
+    } catch (e) { /* 404 / NOT_OWNER / NO_SESSION */ }
+    return null;
+}
+
+// Only RESERVED records need the owning-CNA session (they aren't public yet);
+// PUBLISHED / REJECTED records are fetched from the public CVE.org endpoint.
+async function ensureOwnerSession(owner, state, profiles, canSwitchAway) {
+    if (state !== 'RESERVED') { return; }
+    if (csCache.org && String(csCache.org).toLowerCase() === String(owner).toLowerCase()) { return; }
+    if (!canSwitchAway) { return; }
+    var prof = profiles.find(function (p) { return p && p.org && String(p.org).toLowerCase() === String(owner).toLowerCase(); });
+    if (prof) { try { await loginRememberedProfile(prof, true); } catch (e) { /* leave session as-is */ } }
+}
+
+// Reflect a newly active CNA session in the portal panel/nav, without forcing the
+// portal dialog open (the profile picker does that because it is already in the dialog).
+async function applyOwnerSessionUI(prof) {
+    try {
+        if (!csCache.orgInfo) {
+            csCache.orgInfo = await csClient.getOrgInfo();
+            applyPortalRoleVisibility(csCache.orgInfo);
+        }
+    } catch (e) { /* informational only */ }
+    setPortalNavConnectionState(true);
+    try { await refreshRecentCveEntries(prof.org); } catch (e) { /* ignore */ }
+    if (typeof defaultTimeout !== 'undefined') { setTimeout(portalLogout, defaultTimeout); }
+    var dlg = document.getElementById('cvePortalDialog');
+    if (dlg && dlg.open) { try { await showPortalView(csCache.orgInfo); } catch (e) { /* ignore */ } }
+}
+
+// Decide whether cveId belongs to a CNA this device can act as. Switches the active
+// session to the owning CNA when needed (and safe) to fetch the record, and restores
+// the prior session when nothing owned the id so probing never logs the user out.
+// Returns { owner, state } or null.
+async function cnaResolveOwnership(cveId) {
+    var data = await cnaFetchProfiles();
+    var profiles = (data && data.profiles) ? data.profiles : [];
+
+    var liveActive = false;
+    try { liveActive = await hasActivePortalSession(csCache.url); } catch (e) { liveActive = false; }
+
+    var owned = {};
+    if (csCache && csCache.org) { owned[String(csCache.org).toLowerCase()] = true; }
+    profiles.forEach(function (p) { if (p && p.org) { owned[String(p.org).toLowerCase()] = true; } });
+    if (Object.keys(owned).length === 0) { return null; }
+    function isOwned(name) { return !!(name && owned[String(name).toLowerCase()]); }
+
+    var original = (liveActive && csCache.org) ? { org: csCache.org, user: csCache.user, serviceUrl: csCache.url } : null;
+    var canRestore = true;
+    if (original && csClient) {
+        try { var hr = await csClient.hasRemembered(original.org, original.user); canRestore = !!(hr && hr.remembered); }
+        catch (e) { canRestore = false; }
+    }
+
+    // 1) Probe with the live active session — its answer is decisive.
+    if (liveActive) {
+        var p1 = await probeCveIdOwner(cveId);
+        if (p1 && p1.owning_cna) {
+            if (!isOwned(p1.owning_cna)) { return null; }
+            await ensureOwnerSession(p1.owning_cna, p1.state, profiles, (!original || canRestore));
+            return { owner: p1.owning_cna, state: p1.state };
+        }
+    }
+
+    // 2) The active session couldn't read the id record (no session, or not allowed
+    //    to read another org's id). Try each remembered login until the owning CNA's
+    //    own session can read it. Don't risk a live, non-remembered session.
+    if (original && !canRestore) { return null; }
+    var switched = false;
+    for (var i = 0; i < profiles.length; i++) {
+        var prof = profiles[i];
+        if (!prof || !prof.org || !prof.user) { continue; }
+        if (!(await loginRememberedProfile(prof, false))) { continue; }
+        switched = true;
+        var pr = await probeCveIdOwner(cveId);
+        if (pr && pr.owning_cna && String(pr.owning_cna).toLowerCase() === String(prof.org).toLowerCase()) {
+            await applyOwnerSessionUI(prof);
+            return { owner: prof.org, state: pr.state };
+        }
+    }
+    if (switched) {
+        if (original) { try { await loginRememberedProfile(original, false); } catch (e) { /* ignore */ } }
+        else { try { await portalLogout(); } catch (e) { /* ignore */ } }
+    }
+    return null;
+}
+
+// Persist a fetched CVE record into the local store (cve5 collection) via the same
+// upsert route the editor's Save uses, so the "ID not found" error won't return.
+// Posts the (normalized) fetched record directly so even minimal RESERVED skeletons
+// save without being blocked by editor validation.
+async function saveFetchedRecordLocally(cveId, record) {
+    var body = record;
+    if (typeof cveFixForVulnogram === 'function') {
+        try { body = cveFixForVulnogram(record); } catch (e) { body = record; }
+    }
+    if (!body || !body.cveMetadata || String(body.cveMetadata.cveId) !== String(cveId)) { return false; }
+    try {
+        var resp = await fetch('/' + schemaName + '/' + encodeURIComponent(cveId), {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Accept': 'application/json, text/plain, */*',
+                'Content-Type': 'application/json',
+                'CSRF-Token': csrfToken
+            },
+            redirect: 'error',
+            body: JSON.stringify(body)
+        });
+        if (!resp.ok) { return false; }
+        var res = await resp.json();
+        if (res && res.type === 'saved') { return true; }
+        if (res && res.type === 'err') { console.warn('Auto-save of ' + cveId + ' skipped: ' + res.msg); }
+    } catch (e) {
+        console.error('Auto-save of ' + cveId + ' failed', e);
+    }
+    return false;
+}
+
+// Entry point: on a missing-record page load, auto-pull + save the CVE when it
+// belongs to a logged-in / remembered CNA (see the section header above).
+async function autoFetchMissingIfOwned(cveId) {
+    if (typeof soloMode !== 'undefined' && soloMode) { return; }
+    if (typeof initJSON !== 'undefined' && initJSON !== undefined) { return; } // local doc exists
+    if (!cveId || cveId === 'new' || !/^CVE-[0-9]{4}-[0-9]{4,}$/.test(cveId)) { return; }
+    if (!('serviceWorker' in navigator)) { return; }
+    try { await ensurePortalBootstrap(); } catch (e) { return; }
+
+    var ownership = null;
+    try { ownership = await cnaResolveOwnership(cveId); } catch (e) { ownership = null; }
+    if (!ownership) { return; }
+
+    var authedAsOwner = !!(csCache.org && ownership.owner &&
+        String(csCache.org).toLowerCase() === String(ownership.owner).toLowerCase());
+    if (ownership.state === 'RESERVED' && !authedAsOwner) { return; }
+
+    var record = null;
+    try { record = await cveLoad(cveId); } catch (e) { record = null; }
+    if (record && record.cveMetadata) {
+        if (errMsg) { errMsg.textContent = ''; } // clear the stale "ID not found" flash
+        await saveFetchedRecordLocally(cveId, record);
+    }
+}
+
+function initAutoFetchMissingCve() {
+    try {
+        if (typeof pageDocId !== 'undefined') { autoFetchMissingIfOwned(pageDocId); }
+    } catch (e) { /* ignore */ }
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAutoFetchMissingCve);
+} else {
+    initAutoFetchMissingCve();
 }
 
 async function cveReject(elem, event) {
