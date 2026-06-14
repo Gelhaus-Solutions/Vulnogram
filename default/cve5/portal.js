@@ -875,7 +875,7 @@ function paginate(a) {
     if (isNaN(cp)) {
         //console.log("The data-page element is not pareable ");
         //console.log(cp);
-        return galse;
+        return false;
     }
     let np = cp + parseInt(a);
     var cveForm = document.getElementById("cvePortalFilter");
@@ -935,7 +935,87 @@ async function cveShowError(err) {
     }
 }
 
+// Build a canonical CVE ID from a free-form search term (ID-only search).
+// Accepts "CVE-2024-1234", "2024-1234", "2024 1234", etc.
+function normalizeCveIdQuery(term) {
+    if (!term) return null;
+    var t = String(term).toUpperCase().trim();
+    var full = t.match(/CVE[-\s]*(\d{4})[-\s]*(\d{3,})/);
+    if (full) return 'CVE-' + full[1] + '-' + full[2];
+    var pair = t.match(/(\d{4})[-\s]+(\d{3,})/);
+    if (pair) return 'CVE-' + pair[1] + '-' + pair[2];
+    return null;
+}
+
+function cvePortalSetStatus(msg) {
+    var el = document.getElementById('cveStatusMessage');
+    if (el) { el.innerText = msg || ''; }
+}
+
+function hideCvePagination() {
+    var el = document.getElementById('cvePage');
+    if (el) {
+        el.removeAttribute('data-page');
+        el.style.display = 'none';
+    }
+    var cveForm = document.getElementById('cvePortalFilter');
+    if (cveForm) { cveForm.page = 0; }
+}
+
+// Exact CVE-ID lookup. CVE Services has no server-side free-text/title search,
+// so search is ID-only via GET /cve-id/{id}, valid across every state.
+async function cveSearchById(term) {
+    var cveListFeedback = new feedback(document.getElementById('cveList'), 'spinner');
+    try {
+        var id = normalizeCveIdQuery(term);
+        if (!id) {
+            cveRenderList([]);
+            hideCvePagination();
+            cvePortalSetStatus('Enter a CVE ID such as CVE-' + currentYear + '-1234 to search.');
+            return [];
+        }
+        cvePortalSetStatus('');
+        var rec = await csClient.getCveId(id);
+        if (!rec || rec.error || !rec.cve_id) {
+            cveRenderList([]);
+            hideCvePagination();
+            cvePortalSetStatus(id + ' not found.');
+            return [];
+        }
+        // Honour the state filter unless "All" is selected.
+        var cveForm = document.getElementById('cvePortalFilter');
+        var wantState = (cveForm && cveForm.fstate) ? (cveForm.fstate.value || '') : '';
+        if (wantState && rec.state !== wantState) {
+            cveRenderList([]);
+            hideCvePagination();
+            cvePortalSetStatus(id + ' is ' + rec.state + ', not ' + wantState + '. Choose "All" to view it.');
+            return [];
+        }
+        cveRenderList([rec], false);
+        hideCvePagination();
+        return [rec];
+    } catch (e) {
+        cveRenderList([]);
+        hideCvePagination();
+        var idn = normalizeCveIdQuery(term);
+        cvePortalSetStatus((idn || term) + ' not found.');
+        return [];
+    } finally {
+        cveListFeedback.cancel();
+    }
+}
+
+// Tracks the active (state|year) filter so paging persists but a filter change
+// resets back to the first page.
+var cvePortalFilterSig = null;
+
 async function cveGetList() {
+    var searchForm = document.getElementById('cvePortalFilter');
+    var searchTerm = (searchForm && searchForm.q) ? (searchForm.q.value || '').trim() : '';
+    if (searchTerm) {
+        return await cveSearchById(searchTerm);
+    }
+    cvePortalSetStatus('');
     var currentReserved = true;
     var cveListFeedback = new feedback(document.getElementById('cveList'), 'spinner');
     var filter = {
@@ -961,6 +1041,12 @@ async function cveGetList() {
             if (filter.cve_id_year != currentYear) {
                 currentReserved = false;
             }
+        }
+        // Reset to page 1 when the filter changes; keep the page on pagination clicks.
+        var sig = (filter.state || 'ALL') + '|' + (filter.cve_id_year || '');
+        if (sig !== cvePortalFilterSig) {
+            cvePortalFilterSig = sig;
+            cveForm.page = 0;
         }
         if (cveForm.page) {
             filter.page = cveForm.page;

@@ -124,6 +124,10 @@ mixin portal
                     +usermgmt
     .pad#cveStatusMessage
     form#cvePortalFilter.gap(onchange='cveGetList();')
+        .lbl Search
+        span.txt-icon-wrap
+            span.txt-input-icon.vgi-search
+            input#cveSearchId.bor.txt.txt-has-icon(name="q", type="search", placeholder="CVE-YYYY-NNNN", autocomplete="off", onsearch="event.preventDefault();cveGetList();return false;", onkeydown="if(event.key==='Enter'){event.preventDefault();cveGetList();return false;}")
         .lbl Show
         .rdg
             .form-control
