@@ -192,9 +192,71 @@
         }
 
         updateOrgInfo(orgInfo) {
+            // Org updates take query parameters (e.g. name, id_quota,
+            // active_roles.add/remove), mirroring updateOrgUser.
             return this._middleware.orgName
                 .then(orgName =>
-                    this._middleware.get('org/'.concat(orgName), orgInfo));
+                    this._middleware.put('org/'.concat(orgName), orgInfo, undefined));
+        }
+
+        // ---- Root / Secretariat: org-parameterized variants ------------------
+        // CVE Services authorizes these server-side from the API key's org, so
+        // they return an error for users without the ROOT_CNA / SECRETARIAT role.
+
+        // GET /org — list all orgs (Secretariat). Supports pagination via query.
+        listOrgs(query) {
+            return this._middleware.get('org', query);
+        }
+
+        // POST /org — create a new org (Secretariat). Body-encoded.
+        createOrg(orgInfo) {
+            return this._middleware.post('org', undefined, orgInfo);
+        }
+
+        // GET /org/{shortName} — fetch any org's info.
+        getOrgByName(shortName) {
+            return this._middleware.get('org/'.concat(shortName));
+        }
+
+        // PUT /org/{shortName} — update any org. Query-encoded params:
+        // { name, id_quota, 'active_roles.add', 'active_roles.remove' }.
+        updateOrg(shortName, params) {
+            return this._middleware.put('org/'.concat(shortName), params, undefined);
+        }
+
+        // Convenience: set an org's ID quota via the org update endpoint.
+        setOrgIdQuota(shortName, idQuota) {
+            return this.updateOrg(shortName, { id_quota: idQuota });
+        }
+
+        // GET /org/{shortName}/id_quota — { id_quota, total_reserved, available }.
+        getOrgIdQuotaFor(shortName) {
+            return this._middleware.get(`org/${shortName}/id_quota`);
+        }
+
+        // GET /org/{shortName}/users
+        getOrgUsersFor(shortName) {
+            return this._middleware.get(`org/${shortName}/users`);
+        }
+
+        // GET /org/{shortName}/user/{username}
+        getOrgUserFor(shortName, username) {
+            return this._middleware.get(`org/${shortName}/user/${username}`);
+        }
+
+        // POST /org/{shortName}/user — create a user in any org. Body-encoded.
+        createOrgUserFor(shortName, userInfo) {
+            return this._middleware.post(`org/${shortName}/user`, undefined, userInfo);
+        }
+
+        // PUT /org/{shortName}/user/{username} — update a user. Query-encoded.
+        updateOrgUserFor(shortName, username, params) {
+            return this._middleware.put(`org/${shortName}/user/${username}`, params, undefined);
+        }
+
+        // PUT /org/{shortName}/user/{username}/reset_secret
+        resetOrgUserApiKeyFor(shortName, username) {
+            return this._middleware.put(`org/${shortName}/user/${username}/reset_secret`);
         }
 
         createOrgUser(userInfo) {
