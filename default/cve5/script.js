@@ -47,6 +47,32 @@ async function rejectRecord() {
     }
 }
 
+// Mirror of rejectRecord(): move a loaded REJECTED record back towards PUBLISHED.
+// A rejected record carries no vulnerability details, so we reload the editor with
+// the published schema (publicEditorOption) and state PUBLISHED so the user can fill
+// in the details, then click "Publish CVE" which submits via createCve (CVE Services
+// treats a REJECTED to PUBLISHED transition as a create on /cve/{id}/cna).
+async function cveUnrejectRecord() {
+    var id = getDocID();
+    if (!window.confirm('Move ' + id + ' from Rejected back to Published?\n\nThe editor will switch to the published schema so you can restore the vulnerability details. Nothing is sent to CVE Services until you click "Publish CVE".')) {
+        return false;
+    }
+    var carry = (typeof mainTabGroup !== 'undefined' && mainTabGroup) ? mainTabGroup.getValue() : null;
+    var skeleton = {
+        cveMetadata: {
+            cveId: id,
+            state: 'PUBLISHED'
+        }
+    };
+    if (carry && carry.cveMetadata) {
+        if (carry.cveMetadata.assigner) skeleton.cveMetadata.assigner = carry.cveMetadata.assigner;
+        if (carry.cveMetadata.assignerShortName) skeleton.cveMetadata.assignerShortName = carry.cveMetadata.assignerShortName;
+    }
+    loadJSON(skeleton, id, 'Un-rejecting ' + id, publicEditorOption);
+    mainTabGroup.change(0);
+    return false;
+}
+
 async function draftEmail(event, link, renderId) {
     var subject = ''
     if (typeof (mainTabGroup) !== 'undefined') {

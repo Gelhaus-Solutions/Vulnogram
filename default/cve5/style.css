@@ -363,3 +363,9 @@ button.json-editor-btn-delete {
    min.css, so they fall back to white — jarring in dark mode. Theme them like the
    other editor inputs (var(--wht) is #fff in light, #000 in dark). */
 .editor textarea { background-color: var(--wht); color: var(--txt); }
+
+/* The "Publish CVE" button (#post1) sits next to the round .rbtn toolbar buttons
+   (34px content + 1px border = 36px tall). Its default .fbn padding makes it
+   taller; pin it to the same 36px height while leaving the width to grow with the
+   "Publish CVE" label. The .hid "Publish (un-reject)" button matches it. */
+#post1, #unrejectBtn { height: 36px; min-height: 0; padding-top: 0; padding-bottom: 0; box-sizing: border-box; }

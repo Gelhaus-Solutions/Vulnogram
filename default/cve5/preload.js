@@ -1017,6 +1017,12 @@ if (typeof loadJSON === 'function') {
                 console.error('Continuing without assigner examples', e);
             }
         }
+        // The "Un-reject" button only makes sense on a loaded REJECTED record.
+        var unrejectBtn = document.getElementById('unrejectBtn');
+        if (unrejectBtn) {
+            var isRejected = !!(res && res.cveMetadata && res.cveMetadata.state === 'REJECTED');
+            unrejectBtn.classList.toggle('hid', !isRejected);
+        }
         return originalLoadJSON.apply(this, arguments);
     }
 }

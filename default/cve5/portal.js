@@ -1694,6 +1694,10 @@ async function cveGetList() {
 
 async function cveReserve(yearOffset, number) {
     var year = currentYear + (yearOffset ? yearOffset : 0);
+    var reserveCount = number > 0 && number <= 50 ? number : 1;
+    if (!window.confirm('Reserve ' + reserveCount + ' CVE ID' + (reserveCount > 1 ? 's' : '') + ' for ' + year + ' as ' + (csCache && csCache.org ? csCache.org : 'this CNA') + '?')) {
+        return;
+    }
     try {
         var args = {
             amount: number > 0 && number <= 50 ? number : 1,
@@ -2253,6 +2257,14 @@ async function cvePost() {
         var vr = filterADP(docEditor.validation_results);
         if (!(vr && vr.length == 0)) {
             cveAlert('Please fill the required fields');
+            return;
+        }
+        // Confirm before pushing anything to CVE Services (production records are public).
+        var confirmDoc = await mainTabGroup.getValue();
+        var confirmId = (confirmDoc && confirmDoc.cveMetadata && confirmDoc.cveMetadata.cveId) ? confirmDoc.cveMetadata.cveId : 'this record';
+        var confirmState = (confirmDoc && confirmDoc.cveMetadata && confirmDoc.cveMetadata.state == 'REJECTED') ? 'Rejected' : 'Published';
+        var confirmPortal = (csCache && csCache.portalType) ? csCache.portalType : 'production';
+        if (!window.confirm('Publish ' + confirmId + ' as ' + confirmState + ' to CVE Services (' + confirmPortal + ')?\n\nThis submits the record to CVE.org and cannot be undone.')) {
             return;
         }
         if (!(await cveEnsurePublishSession())) {
@@ -2894,6 +2906,10 @@ async function cvePublishSelectedDrafts(event) {
     });
     if (items.length == 0) {
         cveDraftPublishSetSummary('No publishable drafts selected.', true);
+        return false;
+    }
+    var bulkPortal = (csCache && csCache.portalType) ? csCache.portalType : 'production';
+    if (!window.confirm('Publish ' + items.length + ' draft(s) to CVE Services (' + bulkPortal + ')?\n\n' + items.map(function (it) { return it.id; }).join(', ') + '\n\nThis submits the records to CVE.org and cannot be undone.')) {
         return false;
     }
     cveDraftPublishSetSummary('Publishing ' + items.length + ' draft(s)...');
