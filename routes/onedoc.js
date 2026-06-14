@@ -361,8 +361,25 @@ module.exports = function (Document, opts) {
                 setOnInsert.visibility = newPteam ? 'team' : 'private';
                 setOnInsert.sharedWith = [];
             }
-            if (activeSource) {
-                setOnInsert.source = activeSource;   // tag newly-created docs with the active instance
+            // Decide how the doc is matched and how `source` (the instance tag) is set.
+            // IMPORTANT: never set `source` in both $set and $setOnInsert (Mongo rejects
+            // it as a path conflict), nor in both an upsert query-equality and $setOnInsert.
+            var matchFilter;
+            if (targetDoc) {
+                // Update the exact matched doc by _id (no insert).
+                matchFilter = { _id: targetDoc._id };
+                if (activeSource && targetDoc.source === undefined) {
+                    newDoc.source = activeSource;   // adopt a legacy/untagged doc (via $set)
+                }
+            } else {
+                // No in-scope doc: upsert. Scope the filter to the active instance so a
+                // same-id doc from another instance is never overwritten; the query's
+                // source-equality also tags the inserted doc (so no $setOnInsert.source).
+                matchFilter = {};
+                matchFilter[opts.idpath] = inputID;
+                if (activeSource) {
+                    matchFilter.source = activeSource;
+                }
             }
             var updateSet = {
                 "$set": newDoc,
@@ -371,13 +388,6 @@ module.exports = function (Document, opts) {
                 },
                 "$setOnInsert": setOnInsert
             };
-            // Adopt a legacy (untagged) doc in place rather than leaving it unscoped.
-            if (activeSource && targetDoc && targetDoc.source === undefined) {
-                updateSet.$set.source = activeSource;
-            }
-            // Update the exact matched doc by _id; only upsert (source-scoped) when none exists,
-            // so a same-id doc from another instance is never overwritten.
-            var matchFilter = targetDoc ? { _id: targetDoc._id } : idQ(inputID, req);
             var updateResult = await Document.findOneAndUpdate(
                 matchFilter,
                 updateSet, {
