@@ -42,12 +42,33 @@ module.exports = function (Document, opts) {
 
     var router = module.router = express.Router();
 
+    // --- CVE Services instance scoping ----------------------------------
+    // The same CVE ID can exist on multiple instances (prod/test/local), so we
+    // qualify id matches with the active instance (req.session.activeSource).
+    // A null source (no portal connected, or non-teamScoped section) means
+    // "unscoped" and behaves exactly as before tagging.
+    function reqSource(req) {
+        return (opts.conf && opts.conf.teamScoped && req.session) ? (req.session.activeSource || null) : null;
+    }
+    function idQ(id, req) {
+        return docAccess.sourceQ(opts.idpath, id, reqSource(req));
+    }
+    // Load one doc by id for this request, preferring the exact-source copy over a
+    // legacy (untagged) one. (A present `source` sorts after a missing field under
+    // descending order, so the tagged doc wins; legacy is the fallback.)
+    async function loadOneBySource(id, req) {
+        if (!reqSource(req)) {
+            var q0 = {}; q0[opts.idpath] = id;
+            return Document.findOne(q0);
+        }
+        var rows = await Document.find(idQ(id, req)).sort({ source: -1 }).limit(1).toArray();
+        return (rows && rows.length) ? rows[0] : null;
+    }
+
     // GET docuemnt
     router.get('/:id', ensureRouteID, csrfProtection, [checkID], async function (req, res) {
-        var q = {};
-        q[opts.idpath] = req.params.id;
         try {
-            var doc = await Document.findOne(q);
+            var doc = await loadOneBySource(req.params.id, req);
             if (doc && opts.conf && opts.conf.teamScoped && !docAccess.canAccessDoc(req.user, doc)) {
                 res.status(403);
                 return res.render('blank', {
@@ -86,6 +107,10 @@ module.exports = function (Document, opts) {
                 if (opts.conf && opts.conf.teamScoped) {
                     try {
                         var folderFilter = docAccess.buildReadFilter(req.user);
+                        var folderSrc = docAccess.activeSourceFilter(reqSource(req));
+                        if (folderSrc) {
+                            folderFilter = folderFilter ? { $and: [folderFilter, folderSrc] } : folderSrc;
+                        }
                         folderList = (await Document.distinct('folder', folderFilter || {})).filter(Boolean).sort();
                     } catch (e) { folderList = []; }
                 }
@@ -132,12 +157,9 @@ module.exports = function (Document, opts) {
         .custom((val, {
             req
         }) => {
-            var q = {};
-            q[opts.idpath] = val;
-            return Document.findOne(q).then((doc) => {
+            return Document.findOne(idQ(val, req)).then((doc) => {
                 if (doc) {
                     throw new Error('Document ' + val + ' exists. Save with a different ID or Update the existing one');
-                    return false;
                 } else {
                     return true;
                 }
@@ -150,9 +172,7 @@ module.exports = function (Document, opts) {
     router.get('/new', csrfProtection, queryMW, async function (req, res) {
         var doc = null;
         if (req.querymen.query[opts.idpath]) {
-            var fq = {};
-            fq[opts.idpath] = req.querymen.query[opts.idpath];
-            var doc = await Document.findOne(fq);
+            doc = await loadOneBySource(req.querymen.query[opts.idpath], req);
         }
         if (doc) {
             res.redirect(req.querymen.query[opts.idpath]);
@@ -256,6 +276,8 @@ module.exports = function (Document, opts) {
             entry.visibility = pteam ? 'team' : 'private';
             entry.sharedWith = [];
         }
+        var createSource = reqSource(req);
+        if (createSource) { entry.source = createSource; }
         try {
             var inserted = await Document.insertOne(entry);
             var doc = Object.assign({}, entry, { _id: inserted.insertedId });
@@ -290,13 +312,10 @@ module.exports = function (Document, opts) {
 
         //let doc = req.body;
         let inputID = _.get(req, opts.idpath);
-        let queryNewID = {};
-        let queryOldID = {};
-        queryNewID[opts.idpath] = inputID;
-        queryOldID[opts.idpath] = req.params.id;
+        var activeSource = reqSource(req);
         var renaming = (req.params.id != inputID);
         try {
-            var existingDoc = await Document.findOne(queryNewID);
+            var existingDoc = await loadOneBySource(inputID, req);
             if (existingDoc) {
                 // check Document ID is being renamed.
                 if (renaming) {
@@ -307,7 +326,7 @@ module.exports = function (Document, opts) {
                     return;
                 }
             }
-            var targetDoc = await Document.findOne(queryOldID);
+            var targetDoc = await loadOneBySource(req.params.id, req);
             if (opts.conf && opts.conf.teamScoped) {
                 if (targetDoc) {
                     if (!docAccess.canAccessDoc(req.user, targetDoc) ||
@@ -342,28 +361,39 @@ module.exports = function (Document, opts) {
                 setOnInsert.visibility = newPteam ? 'team' : 'private';
                 setOnInsert.sharedWith = [];
             }
+            if (activeSource) {
+                setOnInsert.source = activeSource;   // tag newly-created docs with the active instance
+            }
+            var updateSet = {
+                "$set": newDoc,
+                "$inc": {
+                    __v: 1
+                },
+                "$setOnInsert": setOnInsert
+            };
+            // Adopt a legacy (untagged) doc in place rather than leaving it unscoped.
+            if (activeSource && targetDoc && targetDoc.source === undefined) {
+                updateSet.$set.source = activeSource;
+            }
+            // Update the exact matched doc by _id; only upsert (source-scoped) when none exists,
+            // so a same-id doc from another instance is never overwritten.
+            var matchFilter = targetDoc ? { _id: targetDoc._id } : idQ(inputID, req);
             var updateResult = await Document.findOneAndUpdate(
-                queryOldID,
-                {
-                    "$set": newDoc,
-                    "$inc": {
-                        __v: 1
-                    },
-                    "$setOnInsert": setOnInsert
-                }, {
-                    upsert: true,
+                matchFilter,
+                updateSet, {
+                    upsert: !targetDoc,
                     returnDocument: 'before'
                 });
             var oldDoc = updateResult || null;
             if (oldDoc) {
                 addHistory(oldDoc, newDoc);
             } else {
-                var insertedDoc = await Document.findOne(queryNewID);
+                var insertedDoc = await loadOneBySource(inputID, req);
                 addHistory(null, insertedDoc || newDoc);
             }
             if (opts.conf && opts.conf.teamScoped && typeof toState !== 'undefined' && fromState !== toState) {
                 try {
-                    await Document.updateOne(queryNewID, {
+                    await Document.updateOne({ _id: targetDoc._id }, {
                         $push: {
                             workflowLog: {
                                 $each: [{ at: new Date(), by: req.user.username, from: (fromState === undefined ? null : fromState), to: toState }],
@@ -402,8 +432,7 @@ module.exports = function (Document, opts) {
 
     //Delete Document
     router.delete('/:id', ensureRouteID, csrfProtection, async function (req, res) {
-        let query = {};
-        query[opts.idpath] = req.params.id;
+        let query = idQ(req.params.id, req);
         try {
             if (opts.conf && opts.conf.teamScoped) {
                 var doc = await Document.findOne(query);
@@ -430,8 +459,7 @@ module.exports = function (Document, opts) {
             req.flash('error', 'Invalid ID');
             return res.render('blank');
         }
-        var q = {};
-        q[opts.idpath] = req.params.id;
+        var q = idQ(req.params.id, req);
         var doc = await Document.findOne(q);
         if (!doc) {
             req.flash('error', 'ID not found: ' + req.params.id);
@@ -460,8 +488,7 @@ module.exports = function (Document, opts) {
             req.flash('error', 'Invalid ID');
             return res.render('blank');
         }
-        var q = {};
-        q[opts.idpath] = req.params.id;
+        var q = idQ(req.params.id, req);
         try {
             var doc = await Document.findOne(q);
             if (!doc) {
@@ -495,8 +522,7 @@ module.exports = function (Document, opts) {
         if (!(opts.conf && opts.conf.teamScoped) || !idRegex.test(req.params.id)) {
             return res.json({ type: 'err', msg: 'Not supported' });
         }
-        var q = {};
-        q[opts.idpath] = req.params.id;
+        var q = idQ(req.params.id, req);
         try {
             var doc = await Document.findOne(q);
             if (!doc) {
@@ -526,8 +552,7 @@ module.exports = function (Document, opts) {
         if (!(opts.conf && opts.conf.teamScoped) || !idRegex.test(req.params.id)) {
             return res.json({ type: 'err', msg: 'Not supported' });
         }
-        var q = {};
-        q[opts.idpath] = req.params.id;
+        var q = idQ(req.params.id, req);
         try {
             var doc = await Document.findOne(q);
             if (!doc) {
@@ -546,10 +571,8 @@ module.exports = function (Document, opts) {
     });
 
     // fetch either logs or comments
-    var getSubDocs = async function (subSchema, doc_id) {
-        var q = {}
-        q[opts.idpath] = doc_id;
-        var parentDoc = await Document.findOne(q);
+    var getSubDocs = async function (subSchema, doc_id, req) {
+        var parentDoc = await loadOneBySource(doc_id, req);
         if (parentDoc) {
             var subq = {
                 parent_id: parentDoc._id
@@ -572,9 +595,9 @@ module.exports = function (Document, opts) {
 
     // Get document chage history (JSON patches)
     router.get('/log/:id', ensureRouteID, [checkID], function (req, res) {
-        getSubDocs(History, req.params.id).then(r => {
+        getSubDocs(History, req.params.id, req).then(r => {
             res.json(r);
-        });
+        }).catch(function () { res.json({ message: 'Error loading history' }); });
     });
 
     return module;

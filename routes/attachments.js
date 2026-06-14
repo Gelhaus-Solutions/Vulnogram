@@ -38,6 +38,14 @@ module.exports = function (Document, opts) {
         }
     }
 
+    // Source-qualified id match: scope file ops to the active CVE Services instance
+    // (req.session.activeSource) so two same-id docs from different instances don't
+    // share file metadata. Null source (or non-teamScoped) => unscoped, as before.
+    function fileIdQuery(req) {
+        var activeSource = (opts.conf && opts.conf.teamScoped && req.session) ? (req.session.activeSource || null) : null;
+        return docAccess.sourceQ(opts.idpath, req.params.id, activeSource);
+    }
+
     // Team/doc-access gate for the attachment routes. For teamScoped sections
     // only: load the doc by id and verify the user may access it (reads) or
     // write to it (mutations, when `capability` is given). Non-teamScoped
@@ -50,9 +58,7 @@ module.exports = function (Document, opts) {
                 return next();
             }
             try {
-                var fq = {};
-                fq[opts.idpath] = req.params.id;
-                var doc = await Document.findOne(fq);
+                var doc = await Document.findOne(fileIdQuery(req));
                 if (!doc) {
                     res.status(404);
                     return res.json({ type: 'err', msg: 'Document not found.' });
@@ -73,8 +79,7 @@ module.exports = function (Document, opts) {
         };
     }
     router.post('/:id/file', csrfProtection, checkPattern, checkDir, checkDocAccess(rbac.CAPABILITIES.CVE_EDIT), async function (req, res) {
-        var fq = {};
-        fq[opts.idpath] = req.params.id;
+        var fq = fileIdQuery(req);
         var doc = await Document.findOne(fq);
         if (doc) {
             var fcount = 0;
@@ -114,8 +119,7 @@ module.exports = function (Document, opts) {
                     var w = await file.pipe(fs.createWriteStream(pn));
 
                     w.on('finish', async function () {
-                        var fileq = {};
-                        fileq[opts.idpath] = req.params.id;
+                        var fileq = fileIdQuery(req);
                         fileq['files.name'] = filename;
                         //console.log('Update query'+ JSON.stringify(fileq));
                         var [ftype, fsubtype] = mimetype ? mimetype.split('/', 2) : ['unknown', 'unknown'];
@@ -195,8 +199,7 @@ module.exports = function (Document, opts) {
 
     // delete file
     router.delete('/:id/file/:filename', csrfProtection, checkPattern, checkDir, checkDocAccess(rbac.CAPABILITIES.CVE_EDIT), async function (req, res) {
-        var fq = {};
-        fq[opts.idpath] = req.params.id;
+        var fq = fileIdQuery(req);
         try {
             var ret = await Document.updateOne(fq, { $pull: { files: { name: req.params.filename } } });
             res.json({ ok: ret.acknowledged ? 1 : 0, n: ret.modifiedCount });
@@ -214,8 +217,7 @@ module.exports = function (Document, opts) {
         },
 
         async function (req, res) {
-            var fq = {};
-            fq[opts.idpath] = req.params.id;
+            var fq = fileIdQuery(req);
             var doc = await Document.findOne(fq, { projection: { files: 1 } });
             res.json(doc ? doc.files : []);
         });

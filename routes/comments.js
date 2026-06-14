@@ -3,6 +3,7 @@ const csurf = require('csurf');
 var csrfProtection = csurf();
 const crypto = require('crypto');
 const { sanitizeRichHtml } = require('../lib/html-sanitize');
+const docAccess = require('../lib/doc-access');
 
 var random_slug = function () {
     return crypto.randomBytes(13).toString('base64').replace(/[\+\/\=]/g, '-');
@@ -34,6 +35,13 @@ var matchingEmail = async function (doc_id) {
 // input doc, opts
 module.exports = function (Document, opts) {
 
+    // Scope comment writes to the active CVE Services instance so a comment lands on
+    // the right copy when the same CVE ID exists on multiple instances.
+    function commentIdQuery(doc_id, req) {
+        var activeSource = (opts.conf && opts.conf.teamScoped && req && req.session) ? (req.session.activeSource || null) : null;
+        return docAccess.sourceQ(opts.idpath, doc_id, activeSource);
+    }
+
     var unifiedComments = async function (doc_id, comments) {
         var emails = null;
         //var emails = await matchingEmail(doc_id);
@@ -49,13 +57,12 @@ module.exports = function (Document, opts) {
         return u;
     }
 
-    var addComment = async function (doc_id, username, text, parent_slug) {
+    var addComment = async function (doc_id, username, text, parent_slug, req) {
         try {
 
             //var posted = new Date();
             var slug = random_slug();
-            var q = {};
-            q[opts.idpath] = doc_id;
+            var q = commentIdQuery(doc_id, req);
             //console.log('Commenting on ' + doc_id + ' q=' + JSON.stringify(q))
             var dt = new Date();
             var ret = await Document.findOneAndUpdate(
@@ -85,10 +92,9 @@ module.exports = function (Document, opts) {
         }
     }
 
-    var updateComment = async function (doc_id, username, text, slug, date) {
+    var updateComment = async function (doc_id, username, text, slug, date, req) {
         try {
-            var q = {};
-            q[opts.idpath] = doc_id;
+            var q = commentIdQuery(doc_id, req);
             q['comments.slug'] = slug;
             q['comments.author'] = username;
             var ret = await Document.findOneAndUpdate(q, {
@@ -113,12 +119,12 @@ module.exports = function (Document, opts) {
     var router = express.Router();
     router.post('/comment', csrfProtection, async function (req, res) {
         if (req.body.slug) {
-            var r = await updateComment(req.body.id, req.user.username, req.body.text, req.body.slug, new Date());
+            var r = await updateComment(req.body.id, req.user.username, req.body.text, req.body.slug, new Date(), req);
             res.json(r);
         } else {
-            addComment(req.body.id, req.user.username, req.body.text).then(r => {
+            addComment(req.body.id, req.user.username, req.body.text, undefined, req).then(r => {
                 res.json(r);
-            })
+            }).catch(function (e) { res.json({ msg: 'Error adding comment' }); });
         }
     });
     return router;

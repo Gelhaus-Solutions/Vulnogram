@@ -199,7 +199,7 @@ module.exports = function (name, opts) {
     // For teamScoped sections, restrict queries to docs the user may read.
     // When activeTeam is set, further narrow the result to that one team so the
     // list shows a single team at a time instead of every team merged together.
-    function applyReadScope(q, user, activeTeam) {
+    function applyReadScope(q, user, activeTeam, activeSource) {
         if (!(opts.conf && opts.conf.teamScoped)) {
             return q;
         }
@@ -212,6 +212,10 @@ module.exports = function (name, opts) {
         if (teamFilter) {
             filters.push(teamFilter);
         }
+        var sourceFilter = docAccess.activeSourceFilter(activeSource);
+        if (sourceFilter) {
+            filters.push(sourceFilter);
+        }
         if (!filters.length) {
             return q;
         }
@@ -221,7 +225,8 @@ module.exports = function (name, opts) {
     function teamScope(req, res, next) {
         if (opts.conf && opts.conf.teamScoped && req.querymen) {
             var activeTeam = req.session ? req.session.activeTeam : null;
-            req.querymen.query = applyReadScope(req.querymen.query || {}, req.user, activeTeam);
+            var activeSource = req.session ? req.session.activeSource : null;
+            req.querymen.query = applyReadScope(req.querymen.query || {}, req.user, activeTeam, activeSource);
         }
         next();
     }
@@ -247,6 +252,14 @@ module.exports = function (name, opts) {
             Document.createIndex(idx, { background: true }).catch(function (e) {
                 console.log('Error ensuring ' + field + ' index: ' + e.message);
             });
+        });
+        // Instance scoping: (source + CVE id). Non-unique so it serves both the
+        // exact-source and legacy (no source) arms of the source filter; the
+        // (source + id) uniqueness invariant is maintained by the save logic.
+        var srcIdIdx = { source: 1 };
+        srcIdIdx[idpath] = 1;
+        Document.createIndex(srcIdIdx, { background: true }).catch(function (e) {
+            console.log('Error ensuring source+id index: ' + e.message);
         });
     }
 
@@ -276,7 +289,7 @@ module.exports = function (name, opts) {
             q[idpath] = {
                 "$in": ids
             };
-            q = applyReadScope(q, req.user);
+            q = applyReadScope(q, req.user, null, req.session ? req.session.activeSource : null);
             try {
                 var docs = await Document.find(q, {
                     projection: {
@@ -302,7 +315,7 @@ module.exports = function (name, opts) {
             q[idpath] = {
                 "$in": req.body.ids
             };
-            q = applyReadScope(q, req.user);
+            q = applyReadScope(q, req.user, null, req.session ? req.session.activeSource : null);
             var fields = {
                 _id: 0
             };
@@ -721,7 +734,7 @@ module.exports = function (name, opts) {
                         q.updatedAt = d;
                         var fq = {};
                         fq[idpath] = f;
-                        fq = applyReadScope(fq, req.user);
+                        fq = applyReadScope(fq, req.user, null, req.session ? req.session.activeSource : null);
                         var docs = await Document.find(fq).toArray();
                         var results = [];
                         for (var d of docs) {

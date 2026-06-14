@@ -19,12 +19,47 @@ var cvePortalFilterChoice = {
 
 function setPortalNavConnectionState(connected) {
     var nav = document.getElementById('cvePortalNav');
-    if (!nav) {
-        return;
+    if (nav) {
+        var status = connected ? 'connected' : 'disconnected';
+        nav.setAttribute('data-portal-status', status);
+        nav.setAttribute('title', connected ? 'CVE Services connected' : 'CVE Services disconnected (login required)');
     }
-    var status = connected ? 'connected' : 'disconnected';
-    nav.setAttribute('data-portal-status', status);
-    nav.setAttribute('title', connected ? 'CVE Services connected' : 'CVE Services disconnected (login required)');
+    updateNvdRefTabVisibility(connected);
+    postActiveSource(connected ? (csCache && csCache.url) : '');
+}
+
+// The NVD Reference tab is only meaningful for production CVEs (the local NVD
+// mirror only holds real, published prod records). Show it only when connected to
+// the prod CVE Services endpoint; hide it for test/local instances or when offline.
+function updateNvdRefTabVisibility(connected) {
+    var onProd = !!connected &&
+        normalizePortalUrl(csCache && csCache.url) === normalizePortalUrl(defaultPortalUrl);
+    var lbl = document.getElementById('nvdrefTabLabel');
+    var panel = document.getElementById('nvdrefTabPanel');
+    if (lbl) { lbl.classList.toggle('hid', !onProd); }
+    if (panel) { panel.classList.toggle('hid', !onProd); }
+}
+
+// Tell the server which CVE Services instance is active so it can scope locally-
+// stored CVEs by `source` (the same CVE ID can exist on prod/test/local). Posts
+// only on change; '' unsets it (logout) => the server reverts to unscoped. Returns
+// the fetch promise so callers (e.g. auto-fetch) can await it before saving.
+var lastPostedActiveSource = undefined;
+function postActiveSource(url) {
+    var norm = url ? normalizePortalUrl(url) : '';
+    if (norm === lastPostedActiveSource) { return Promise.resolve(); }
+    lastPostedActiveSource = norm;
+    var token = (typeof csrfToken !== 'undefined') ? csrfToken : '';
+    return fetch('/users/active-source', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json',
+            'CSRF-Token': token
+        },
+        body: 'source=' + encodeURIComponent(norm) + '&_csrf=' + encodeURIComponent(token)
+    }).catch(function () { lastPostedActiveSource = undefined; });
 }
 
 async function refreshPortalNavConnectionState() {
@@ -1956,6 +1991,9 @@ async function saveFetchedRecordLocally(cveId, record) {
         try { body = cveFixForVulnogram(record); } catch (e) { body = record; }
     }
     if (!body || !body.cveMetadata || String(body.cveMetadata.cveId) !== String(cveId)) { return false; }
+    // Tag the saved record with the instance it was actually fetched from, even on
+    // the silent ownership-probe path that may not have flipped the nav state.
+    try { await postActiveSource(csCache && csCache.url); } catch (e) { /* best effort */ }
     try {
         var resp = await fetch('/' + schemaName + '/' + encodeURIComponent(cveId), {
             method: 'POST',

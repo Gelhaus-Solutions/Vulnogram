@@ -14,6 +14,7 @@ const rbac = require('../lib/rbac');
 const Team = require('../models/team');
 const Role = require('../models/role');
 const conf = require('../config/conf');
+const { normalizePortalUrl } = require('../lib/portal-url');
 const csurf = require('csurf');
 const {
     matchedData,
@@ -469,6 +470,32 @@ protected.post('/active-team', csrfProtection, function (req, res) {
     var wantsJson = req.xhr || (req.get('Accept') || '').indexOf('application/json') >= 0;
     if (wantsJson) {
         return res.json({ ok: ok, activeTeam: req.session.activeTeam || '' });
+    }
+    res.redirect(back);
+});
+
+// Switch the active CVE Services instance used to scope locally-stored CVEs by
+// their `source`. The cve5 portal posts its current endpoint on login/switch and
+// an empty value on logout. Stored per-session; empty => unset (behave as before
+// tagging). The value only scopes the user's own session/docs, so any well-formed
+// http(s) endpoint is accepted (prod, test, or a local instance).
+protected.post('/active-source', csrfProtection, function (req, res) {
+    var raw = (req.body && req.body.source) || '';
+    var back = req.get('Referer') || '/';
+    var ok = true;
+    if (!raw) {
+        req.session.activeSource = null;
+    } else {
+        var url = normalizePortalUrl(raw);
+        if (/^https?:\/\//i.test(url)) {
+            req.session.activeSource = url;
+        } else {
+            ok = false;
+        }
+    }
+    var wantsJson = req.xhr || (req.get('Accept') || '').indexOf('application/json') >= 0;
+    if (wantsJson) {
+        return res.json({ ok: ok, activeSource: req.session.activeSource || '' });
     }
     res.redirect(back);
 });

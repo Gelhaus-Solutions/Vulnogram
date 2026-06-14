@@ -25,6 +25,29 @@ block append head
             flex-shrink: 0;
             padding-left: 0.5em;
         }
+        /* Line up the editor top-header action buttons at one height (the 34px round buttons). */
+        .vg-top-header .right {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .vg-top-header .right .fbn,
+        .vg-top-header .right .btn,
+        .vg-top-header .right .sfe,
+        .vg-top-header .right > .lbl,
+        .vg-top-header .right > .nobr,
+        .vg-top-header .right .vg-user-details > summary {
+            height: 34px;
+            box-sizing: border-box;
+            display: inline-flex;
+            align-items: center;
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        .vg-top-header .right .vgi-folder .txt {
+            height: 30px;
+            box-sizing: border-box;
+        }
 
 block append sidebarNav
     details#recentGroup.sidebar-expandable
@@ -130,8 +153,8 @@ block customtabs
                 a.vgi-mail.fbn.right(type="button",oncontextmenu='draftEmail(event, this, "render");',onclick='draftEmail(event, this,"render");',value="Email") Email
             div.render(id="render")
         input.tab(name='tabs', type='radio', id='nvdrefTab', value="5")
-        label.lbl.vgi-data(for='nvdrefTab') NVD Reference
-        .fil.bort.pad
+        label.lbl.hid#nvdrefTabLabel(for='nvdrefTab') NVD Reference
+        .fil.bort.pad.hid#nvdrefTabPanel
             p.sml.tgrey Read-only reference data from the local NVD mirror.
             div.render#nvdRefRender
 
