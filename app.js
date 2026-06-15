@@ -48,7 +48,11 @@ const app = express();
 var rateLimit = require('express-rate-limit');
 var limiter = rateLimit({
   windowMs: 1*60*1000, // 1 minute
-  max: 200
+  max: 200,
+  // May run behind a reverse proxy (trust proxy set). Don't hard-fail the
+  // permissive-trust-proxy validation; rate limiting stays best-effort by IP.
+  // For accurate limits, set TRUST_PROXY to the real hop count (e.g. 1) not "true".
+  validate: { trustProxy: false }
 });
 // apply rate limiter to all requests
 app.use(limiter);

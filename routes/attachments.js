@@ -98,7 +98,8 @@ module.exports = function (Document, opts) {
         if (doc) {
             var fcount = 0;
             var comment;
-            var busboy = new Busboy({
+            // busboy v1.x exports a factory function, not a constructor.
+            var busboy = Busboy({
                 headers: req.headers
             });
             busboy.on('field', function (fieldname, val, fieldnameTruncated, valTruncated, encoding, mimetype) {
@@ -295,7 +296,7 @@ module.exports = function (Document, opts) {
     // disk presence alone is never enough. Force-download + nosniff + strict CSP
     // neutralize stored-XSS from user-uploaded HTML/SVG/JS served from our origin.
     var publicRouter = express.Router();
-    var publicLimiter = rateLimit({ windowMs: 60 * 1000, max: 120 });
+    var publicLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, validate: { trustProxy: false } });
     publicRouter.get('/:id/public/file/:filename', publicLimiter, checkPattern, checkDir, async function (req, res) {
         try {
             // No session here (unauthenticated): match by id only, unscoped by
