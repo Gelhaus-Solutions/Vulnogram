@@ -800,14 +800,16 @@ module.exports = function (name, opts) {
 
     var comments = require('./comments');
     router.use(onedoc.router);
+    var publicRouter = null;
     if (opts.conf.files) {
         var attachment = require('./attachments');
         var att = attachment(Document, opts);
         router.use(att.router);
-        module.publicRouter = att.publicRouter;
+        publicRouter = att.publicRouter;
     }
     router.use(comments(Document, opts));
 
-    module.router = router;
-    return module;
+    // Return a fresh object per call. (Previously this mutated the shared CommonJS
+    // `module` object, so publicRouter could leak from one section to the next.)
+    return { router: router, publicRouter: publicRouter };
 };

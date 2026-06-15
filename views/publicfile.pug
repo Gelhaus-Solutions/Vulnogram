@@ -44,6 +44,13 @@ html
             else
               |  —
               span Private
+          if isPublic && publicUrl
+            .bor.rnd.pad(style="margin:.5rem 0 1rem;word-break:break-all;")
+              b.grn.vgi-ext Shareable public link
+              br
+              a#pubLink(href=publicUrl, target='_blank', rel='noopener')= publicUrl
+              script.
+                (function(){var a=document.getElementById('pubLink');if(a){var u=location.origin+a.getAttribute('href');a.textContent=u;a.href=u;}})();
           dl.pfmeta
             dt File
             dd= file.name

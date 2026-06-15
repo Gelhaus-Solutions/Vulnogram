@@ -343,6 +343,12 @@ module.exports = function (Document, opts) {
             cveId: req.params.id,
             file: entry,
             isPublic: entry.public === true,
+            // The shareable, login-free URL (always the /public/ path), surfaced on
+            // the page so operators don't accidentally share the authenticated /file/
+            // URL from the address bar (which 302s to login for logged-out viewers).
+            publicUrl: entry.public === true
+                ? (req.baseUrl + '/' + encodeURIComponent(req.params.id) + '/public/file/' + encodeURIComponent(entry.name))
+                : null,
             sizeStr: humanSize(entry.size),
             updatedStr: entry.updatedAt ? new Date(entry.updatedAt).toUTCString() : '',
             kind: kind,
