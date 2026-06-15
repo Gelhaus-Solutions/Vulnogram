@@ -95,113 +95,80 @@ module.exports = function (Document, opts) {
     router.post('/:id/file', csrfProtection, checkPattern, checkDir, checkDocAccess(rbac.CAPABILITIES.CVE_EDIT), async function (req, res) {
         var fq = fileIdQuery(req);
         var doc = await Document.findOne(fq);
-        if (doc) {
-            var fcount = 0;
-            var comment;
-            // busboy v1.x exports a factory function, not a constructor.
-            var busboy = Busboy({
-                headers: req.headers
-            });
-            busboy.on('field', function (fieldname, val, fieldnameTruncated, valTruncated, encoding, mimetype) {
-                if (fieldname == 'comment') {
-                    comment = val;
-                }
-            });
-            busboy.on('file', async function (fieldname, file, filename, encoding, mimetype) {
-                var x = fcount++;
-                //console.log('File [' + fieldname + ']: filename: ' + filename + ', encoding: ' + encoding + ', mimetype: ' + mimetype + ' COMMENT: '+ comment);
-                //var base = opts.conf.files;
-                var collectionDir = opts.conf.files; //path.join(base, req.baseUrl);
-                if (!fs.existsSync(collectionDir)) {
-                    fs.mkdirSync(collectionDir);
-                    //console.log(' Created collection dir' + collectionDir);
-                }
+        if (!doc) {
+            return res.json({ ok: 0, msg: 'Document not found!' });
+        }
+        var comment;
+        var pending = [];   // one promise per file: write to disk, then record metadata
+        var hadError = false;
+        // busboy v1.x exports a factory (not a constructor) and emits 'file' with
+        // an info object { filename, encoding, mimeType } as the 3rd argument.
+        var busboy = Busboy({ headers: req.headers });
+        busboy.on('field', function (fieldname, val) {
+            if (fieldname == 'comment') {
+                comment = val;
+            }
+        });
+        busboy.on('file', function (fieldname, file, info) {
+            var filename = info && info.filename;
+            var mimetype = info && info.mimeType;
+            if (!filename) {
+                file.resume(); // drain & skip parts without a filename
+                return;
+            }
+            pending.push((async function () {
+                var collectionDir = opts.conf.files;
+                if (!fs.existsSync(collectionDir)) { fs.mkdirSync(collectionDir); }
                 var docDir = path.join(collectionDir, req.params.id);
-
-                if (!fs.existsSync(docDir)) {
-                    fs.mkdirSync(docDir);
-                    //console.log(' Created Doc dir' + docDir);
-                }
+                if (!fs.existsSync(docDir)) { fs.mkdirSync(docDir); }
                 docDir = path.join(docDir, 'file');
-                if (!fs.existsSync(docDir)) {
-                    fs.mkdirSync(docDir);
-                    //console.log(' Created Doc dir' + docDir);
-                }
+                if (!fs.existsSync(docDir)) { fs.mkdirSync(docDir); }
 
                 var safeName = sanitizeFile(filename) || 'attachment';
-                var saveTo = path.join(docDir, safeName);
-                var pn = path.normalize(saveTo);
-                if (pn.startsWith(docDir)) {
-                    var w = await file.pipe(fs.createWriteStream(pn));
-
-                    w.on('finish', async function () {
-                        var fileq = fileIdQuery(req);
-                        fileq['files.name'] = safeName;
-                        //console.log('Update query'+ JSON.stringify(fileq));
-                        var [ftype, fsubtype] = mimetype ? mimetype.split('/', 2) : ['unknown', 'unknown'];
-                        ; var nf = {
-                            "name": safeName,
-                            "updatedAt": new Date(),
-                            "size": w.bytesWritten,
-                            "comment": comment,
-                            "user": req.user.username,
-                            "type": ftype,
-                            "subtype": fsubtype
-                        };
-                        var ret = await Document.findOneAndUpdate(fileq, {
-                            '$set': {
-                                "files.$": nf
-                            }
-                        }, {
-                            returnDocument: 'after'
-                        });
-                        if (ret === null) {
-                            var ret = await Document.findOneAndUpdate(fq, {
-                                $push: {
-                                    files: nf
-                                }
-                            }, {
-                                returnDocument: 'after'
-                            });
-                        }
-
-                        if (x == (fcount - 1)) {
-                            if (busboy._done) {
-                                res.json({
-                                    ok: '1',
-                                    //flist: flist
-                                })
-                            } else {
-                                busboy.on('finish', function () {
-                                    res.json({
-                                        ok: '1',
-                                        //flist: flist
-                                    })
-                                });
-                            }
-                        }
-                    });
-                } else {
-                    res.json({
-                        ok: 0,
-                        msg: 'Invalid file path!'
-                    });
+                var pn = path.normalize(path.join(docDir, safeName));
+                if (!pn.startsWith(docDir)) {
+                    file.resume();
+                    hadError = true;
+                    return;
                 }
-            });
-
-            /*busboy.on('finish', function () {
-                res.json({
-                    ok: '1',
-                    //flist: flist
-                })
-            });*/
-            req.pipe(busboy);
-        } else {
-            res.json({
-                ok: 0,
-                msg: 'Document not found!'
-            });
-        }
+                var w = fs.createWriteStream(pn);
+                await new Promise(function (resolve, reject) {
+                    file.on('error', reject);
+                    w.on('error', reject);
+                    w.on('finish', resolve);
+                    file.pipe(w);
+                });
+                var [ftype, fsubtype] = mimetype ? mimetype.split('/', 2) : ['unknown', 'unknown'];
+                var nf = {
+                    "name": safeName,
+                    "updatedAt": new Date(),
+                    "size": w.bytesWritten,
+                    "comment": comment,
+                    "user": req.user.username,
+                    "type": ftype,
+                    "subtype": fsubtype
+                };
+                // Update an existing same-named entry in place, else append.
+                var fileq = fileIdQuery(req);
+                fileq['files.name'] = safeName;
+                var ret = await Document.findOneAndUpdate(fileq, { '$set': { "files.$": nf } }, { returnDocument: 'after' });
+                if (ret === null) {
+                    await Document.findOneAndUpdate(fq, { $push: { files: nf } }, { returnDocument: 'after' });
+                }
+            })().catch(function (e) {
+                hadError = true;
+                console.error('Attachment upload failed: ' + (e && e.message));
+            }));
+        });
+        busboy.on('close', async function () {
+            await Promise.all(pending);
+            if (hadError) {
+                res.status(500);
+                return res.json({ ok: 0, msg: 'One or more files failed to upload.' });
+            }
+            res.json({ ok: '1' });
+        });
+        req.pipe(busboy);
     });
 
     //GET file contents
