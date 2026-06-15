@@ -1,0 +1,71 @@
+//- Public, unauthenticated landing page for a shared CVE attachment.
+//- TRUSTED wrapper: every interpolation below is pug-escaped, and the untrusted
+//- file bytes are served separately from the /raw sub-URL with strict headers.
+- var base = (typeof conf !== 'undefined' && conf && conf.basedir) ? conf.basedir : '/';
+doctype html
+html
+  head
+    meta(charset='utf-8')
+    meta(name='viewport', content='width=device-width, initial-scale=1.0')
+    meta(name='robots', content='noindex,nofollow')
+    title= title
+    link(rel='stylesheet', href=base + 'css/min.css')
+    link(rel='stylesheet', href=base + 'css/vg-icons.css')
+    link(rel='icon', href=base + 'css/logo.png', sizes='256x256')
+    style.
+      .pfwrap{max-width:900px;margin:1.5rem auto;padding:0 1rem;}
+      .pfhead{display:flex;align-items:center;gap:.5rem;margin:0 0 .25rem;word-break:break-all;}
+      .pfsub{margin-bottom:1rem;}
+      .pfmeta{display:grid;grid-template-columns:max-content 1fr;gap:.35rem 1.25rem;margin:0 0 1.25rem;}
+      .pfmeta dt{font-weight:bold;white-space:nowrap;opacity:.75;}
+      .pfmeta dd{margin:0;word-break:break-word;}
+      .pfprev{border:1px solid rgba(128,128,128,.3);border-radius:8px;background:#fff;padding:.5rem;}
+      .pfprev img{max-width:100%;height:auto;display:block;margin:0 auto;}
+      .pfprev iframe{width:100%;height:72vh;border:0;display:block;}
+      .pfprev pre{max-height:72vh;overflow:auto;white-space:pre-wrap;word-break:break-word;margin:0;font-size:.85em;}
+      .pffoot{margin-top:1.5rem;opacity:.6;font-size:.8em;text-align:center;}
+  body.sec.wlp
+    .pfwrap
+      .wht.shd.bor.rnd.pad2
+        if notFound
+          h2.tred.vgi-fail  Attachment not available
+          p.tgrey This file is not public, has been removed, or the link is incorrect.
+        else
+          h2.pfhead.vgi-clip= file.name
+          .pfsub.tgrey.sml
+            | Public attachment for
+            if conf && conf.mitreURL
+              a.vgi-ext(href=conf.mitreURL + cveId, target='_blank', rel='noopener')= cveId
+            else
+              b= cveId
+          dl.pfmeta
+            dt File
+            dd= file.name
+            dt Type
+            dd= (file.type || 'unknown') + (file.subtype ? '/' + file.subtype : '')
+            dt Size
+            dd= sizeStr || 'unknown'
+            if file.comment
+              dt Description
+              dd= file.comment
+            dt Uploaded by
+            dd= file.user || 'unknown'
+            if updatedStr
+              dt Updated
+              dd= updatedStr
+          p
+            a.btn.sfe.vgi-download(href=downloadUrl) Download
+          h3.vgi-eye  Preview
+          .pfprev
+            case kind
+              when 'image'
+                img(src=rawUrl, alt=file.name)
+              when 'pdf'
+                iframe(src=rawUrl, title=file.name)
+              when 'text'
+                pre= textContent
+              when 'toobig'
+                p.tgrey.pad This file is too large to preview inline — use Download above.
+              default
+                p.tgrey.pad No inline preview available for this file type — use Download above.
+      .pffoot Served by Vulnogram

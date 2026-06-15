@@ -257,29 +257,123 @@ module.exports = function (Document, opts) {
         });
     });
 
-    // --- Public (unauthenticated) download router ---------------------------
-    // Mounted in app.js BEFORE ensureAuthenticated. Serves an attachment only
-    // when its files[] entry is explicitly flagged public:true in the DB, so
-    // disk presence alone is never enough. Force-download + nosniff + strict CSP
-    // neutralize stored-XSS from user-uploaded HTML/SVG/JS served from our origin.
+    // --- Public (unauthenticated) attachment access -------------------------
+    // Mounted in app.js BEFORE ensureAuthenticated. A file is reachable only when
+    // its files[] entry is explicitly flagged public:true in the DB (disk presence
+    // alone is never enough). The landing page is TRUSTED HTML rendered from our
+    // template (every interpolation is pug-escaped); the untrusted file BYTES are
+    // isolated at the /raw sub-URL, which serves inline only for a safelist of
+    // inert types and forces a download for everything else (html/svg/binary).
     var publicRouter = express.Router();
     var publicLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, validate: { trustProxy: false } });
+
+    function findPublicEntry(doc, filename) {
+        return (doc && Array.isArray(doc.files))
+            ? doc.files.find(function (f) { return f && f.name === filename && f.public === true; })
+            : null;
+    }
+
+    function humanSize(n) {
+        if (typeof n !== 'number' || !isFinite(n) || n < 0) { return ''; }
+        if (n < 1024) { return n + ' B'; }
+        var units = ['KB', 'MB', 'GB', 'TB'];
+        var i = -1;
+        do { n = n / 1024; i++; } while (n >= 1024 && i < units.length - 1);
+        return n.toFixed(1) + ' ' + units[i];
+    }
+
+    // What the landing page renders inline for a given entry.
+    function previewKindFor(entry) {
+        var t = entry.type;
+        var s = (entry.subtype || '').toLowerCase();
+        var raster = { png: 1, jpeg: 1, jpg: 1, gif: 1, webp: 1, bmp: 1, 'x-icon': 1, 'vnd.microsoft.icon': 1 };
+        if (t === 'image' && raster[s]) { return 'image'; }
+        if (t === 'application' && s === 'pdf') { return 'pdf'; }
+        if (t === 'text') { return 'text'; }
+        if (t === 'application' && (s === 'json' || s === 'xml' || s === 'x-yaml' || s === 'yaml' || s === 'csv' || s === 'javascript' || s === 'x-sh')) { return 'text'; }
+        return 'none';
+    }
+
+    // Content-Type for serving bytes INLINE. Returns null for types unsafe to
+    // render in our origin (html, svg, unknown) -> caller forces a download.
+    // Textual types are pinned to text/plain so an uploaded .html/.svg can never
+    // be parsed or executed by the browser.
+    function inlineContentType(entry) {
+        var t = entry.type;
+        var s = (entry.subtype || '').toLowerCase();
+        var raster = { png: 'image/png', jpeg: 'image/jpeg', jpg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', 'x-icon': 'image/x-icon', 'vnd.microsoft.icon': 'image/x-icon' };
+        if (t === 'image' && raster[s]) { return raster[s]; }
+        if (t === 'application' && s === 'pdf') { return 'application/pdf'; }
+        if (previewKindFor(entry) === 'text') { return 'text/plain; charset=utf-8'; }
+        return null;
+    }
+
+    // Landing page: a friendly overview with an inline preview when supported.
     publicRouter.get('/:id/public/file/:filename', publicLimiter, checkPattern, checkDir, async function (req, res) {
         try {
             // No session here (unauthenticated): match by id only, unscoped by
             // source. If the same id exists from multiple instances, first wins.
             var doc = await Document.findOne(docAccess.sourceQ(opts.idpath, req.params.id, null), { projection: { files: 1 } });
-            var entry = (doc && Array.isArray(doc.files))
-                ? doc.files.find(function (f) { return f && f.name === req.params.filename && f.public === true; })
-                : null;
+            var entry = findPublicEntry(doc, req.params.filename);
+            var diskPath = safeFilePath(req.params.id, req.params.filename);
+            if (!entry || !diskPath || !fs.existsSync(diskPath)) {
+                res.status(404);
+                return res.render('publicfile', { notFound: true, title: 'Attachment not available' });
+            }
+            var base = req.baseUrl + '/' + encodeURIComponent(req.params.id) + '/public/file/' + encodeURIComponent(req.params.filename);
+            var kind = previewKindFor(entry);
+            var textContent = null;
+            if (kind === 'text') {
+                var size = typeof entry.size === 'number' ? entry.size : fs.statSync(diskPath).size;
+                if (size <= 512 * 1024) {
+                    try { textContent = fs.readFileSync(diskPath, 'utf8'); } catch (e) { kind = 'none'; }
+                } else {
+                    kind = 'toobig';
+                }
+            }
+            return res.render('publicfile', {
+                title: entry.name,
+                cveId: req.params.id,
+                file: entry,
+                sizeStr: humanSize(entry.size),
+                updatedStr: entry.updatedAt ? new Date(entry.updatedAt).toUTCString() : '',
+                kind: kind,
+                textContent: textContent,
+                rawUrl: base + '/raw',
+                downloadUrl: base + '/raw?download=1'
+            });
+        } catch (e) {
+            res.status(500);
+            return res.json({ type: 'err', msg: toErrorMessage(e) });
+        }
+    });
+
+    // Raw bytes. Inline (preview) for a safelist of inert types; ?download=1
+    // forces an attachment for ANY type. nosniff + an explicit Content-Type keep
+    // user-uploaded content from being sniffed or executed in our origin.
+    publicRouter.get('/:id/public/file/:filename/raw', publicLimiter, checkPattern, checkDir, async function (req, res) {
+        try {
+            var doc = await Document.findOne(docAccess.sourceQ(opts.idpath, req.params.id, null), { projection: { files: 1 } });
+            var entry = findPublicEntry(doc, req.params.filename);
             var diskPath = safeFilePath(req.params.id, req.params.filename);
             if (!entry || !diskPath || !fs.existsSync(diskPath)) {
                 res.status(404);
                 return res.json({ type: 'err', msg: 'Not found.' });
             }
-            res.setHeader("Content-Security-Policy", "default-src 'none'; connect-src 'none'");
+            var safe = sanitizeFile(req.params.filename);
             res.setHeader("X-Content-Type-Options", "nosniff");
-            res.setHeader("Content-Disposition", 'attachment; filename="' + sanitizeFile(req.params.filename) + '"');
+            var wantsDownload = req.query.download === '1' || req.query.download === 'true';
+            var inlineType = wantsDownload ? null : inlineContentType(entry);
+            if (inlineType) {
+                // Pre-set Content-Type so res.sendFile won't override it from the
+                // file extension; inline disposition lets the browser preview it.
+                res.setHeader("Content-Type", inlineType);
+                res.setHeader("Content-Disposition", 'inline; filename="' + safe + '"');
+                return res.sendFile(path.resolve(diskPath));
+            }
+            // Unsafe to render inline (or explicit download): force a download.
+            res.setHeader("Content-Type", "application/octet-stream");
+            res.setHeader("Content-Disposition", 'attachment; filename="' + safe + '"');
             return res.sendFile(path.resolve(diskPath));
         } catch (e) {
             res.status(500);
