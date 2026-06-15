@@ -33,11 +33,17 @@ html
         else
           h2.pfhead.vgi-clip= file.name
           .pfsub.tgrey.sml
-            | Public attachment for
+            | Attachment of
             if conf && conf.mitreURL
               a.vgi-ext(href=conf.mitreURL + cveId, target='_blank', rel='noopener')= cveId
             else
               b= cveId
+            if isPublic
+              |  —
+              b.grn Public
+            else
+              |  —
+              span Private
           dl.pfmeta
             dt File
             dd= file.name

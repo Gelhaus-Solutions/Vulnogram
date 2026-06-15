@@ -124,7 +124,7 @@ module.exports = function (Document, opts) {
                 docDir = path.join(docDir, 'file');
                 if (!fs.existsSync(docDir)) { fs.mkdirSync(docDir); }
 
-                var safeName = sanitizeFile(filename) || 'attachment';
+                var safeName = cleanFilename(filename);
                 var pn = path.normalize(path.join(docDir, safeName));
                 if (!pn.startsWith(docDir)) {
                     file.resume();
@@ -171,16 +171,31 @@ module.exports = function (Document, opts) {
         req.pipe(busboy);
     });
 
-    //GET file contents
-    router.get('/:id/file/:filename', checkPattern, checkDir, checkDocAccess(),
-        async function (req, res, next) {
-            res.setHeader("Content-Security-Policy", "default-src 'none'; connect-src 'none'");
-            res.setHeader("X-Content-Type-Options", "nosniff");
-            res.setHeader("Content-Disposition", 'attachment; filename="' + sanitizeFile(req.params.filename) + '"');
-            return next();
-        },
-        express.static(path.join(opts.conf.files))
-    );
+    // GET the attachment overview page (any file the viewer can access). The bytes
+    // are served from the /raw sub-route below; this shows details + a preview.
+    router.get('/:id/file/:filename', checkPattern, checkDir, checkDocAccess(), async function (req, res) {
+        try {
+            var doc = await Document.findOne(fileIdQuery(req), { projection: { files: 1 } });
+            var entry = findEntryByName(doc, req.params.filename);
+            var base = req.baseUrl + '/' + encodeURIComponent(req.params.id) + '/file/' + encodeURIComponent(req.params.filename);
+            return renderLanding(req, res, entry, base);
+        } catch (e) {
+            res.status(500);
+            return res.json({ type: 'err', msg: toErrorMessage(e) });
+        }
+    });
+
+    // GET the raw bytes (inline preview for safe types; ?download=1 forces download).
+    router.get('/:id/file/:filename/raw', checkPattern, checkDir, checkDocAccess(), async function (req, res) {
+        try {
+            var doc = await Document.findOne(fileIdQuery(req), { projection: { files: 1 } });
+            var entry = findEntryByName(doc, req.params.filename);
+            return serveRaw(req, res, entry);
+        } catch (e) {
+            res.status(500);
+            return res.json({ type: 'err', msg: toErrorMessage(e) });
+        }
+    });
 
     // delete file
     router.delete('/:id/file/:filename', csrfProtection, checkPattern, checkDir, checkDocAccess(rbac.CAPABILITIES.CVE_EDIT), async function (req, res) {
@@ -257,20 +272,15 @@ module.exports = function (Document, opts) {
         });
     });
 
-    // --- Public (unauthenticated) attachment access -------------------------
-    // Mounted in app.js BEFORE ensureAuthenticated. A file is reachable only when
-    // its files[] entry is explicitly flagged public:true in the DB (disk presence
-    // alone is never enough). The landing page is TRUSTED HTML rendered from our
-    // template (every interpolation is pug-escaped); the untrusted file BYTES are
-    // isolated at the /raw sub-URL, which serves inline only for a safelist of
-    // inert types and forces a download for everything else (html/svg/binary).
-    var publicRouter = express.Router();
-    var publicLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, validate: { trustProxy: false } });
-
-    function findPublicEntry(doc, filename) {
+    // --- Shared attachment overview / raw-byte helpers ----------------------
+    function findEntryByName(doc, filename) {
         return (doc && Array.isArray(doc.files))
-            ? doc.files.find(function (f) { return f && f.name === filename && f.public === true; })
+            ? doc.files.find(function (f) { return f && f.name === filename; })
             : null;
+    }
+    function findPublicEntry(doc, filename) {
+        var e = findEntryByName(doc, filename);
+        return (e && e.public === true) ? e : null;
     }
 
     function humanSize(n) {
@@ -282,7 +292,7 @@ module.exports = function (Document, opts) {
         return n.toFixed(1) + ' ' + units[i];
     }
 
-    // What the landing page renders inline for a given entry.
+    // What the overview page renders inline for a given entry.
     function previewKindFor(entry) {
         var t = entry.type;
         var s = (entry.subtype || '').toLowerCase();
@@ -308,73 +318,90 @@ module.exports = function (Document, opts) {
         return null;
     }
 
-    // Landing page: a friendly overview with an inline preview when supported.
+    // Render the attachment overview page (details + inline preview when supported).
+    // `basePath` is this attachment's URL; the bytes live at `basePath + '/raw'`.
+    // Shared by the authenticated and public routes. The page is TRUSTED HTML (all
+    // values pug-escaped); untrusted bytes are isolated at /raw with strict headers.
+    function renderLanding(req, res, entry, basePath) {
+        var diskPath = safeFilePath(req.params.id, req.params.filename);
+        if (!entry || !diskPath || !fs.existsSync(diskPath)) {
+            res.status(404);
+            return res.render('publicfile', { notFound: true, title: 'Attachment not available' });
+        }
+        var kind = previewKindFor(entry);
+        var textContent = null;
+        if (kind === 'text') {
+            var size = typeof entry.size === 'number' ? entry.size : fs.statSync(diskPath).size;
+            if (size <= 512 * 1024) {
+                try { textContent = fs.readFileSync(diskPath, 'utf8'); } catch (e) { kind = 'none'; }
+            } else {
+                kind = 'toobig';
+            }
+        }
+        return res.render('publicfile', {
+            title: entry.name,
+            cveId: req.params.id,
+            file: entry,
+            isPublic: entry.public === true,
+            sizeStr: humanSize(entry.size),
+            updatedStr: entry.updatedAt ? new Date(entry.updatedAt).toUTCString() : '',
+            kind: kind,
+            textContent: textContent,
+            rawUrl: basePath + '/raw',
+            downloadUrl: basePath + '/raw?download=1'
+        });
+    }
+
+    // Serve the raw bytes. Inline preview for a safelist of inert types; otherwise
+    // (or with ?download=1) force a download. nosniff + an explicit Content-Type
+    // keep user-uploaded content from being sniffed or executed in our origin.
+    function serveRaw(req, res, entry) {
+        var diskPath = safeFilePath(req.params.id, req.params.filename);
+        if (!entry || !diskPath || !fs.existsSync(diskPath)) {
+            res.status(404);
+            return res.json({ type: 'err', msg: 'Not found.' });
+        }
+        var safe = sanitizeFile(req.params.filename);
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        var wantsDownload = req.query.download === '1' || req.query.download === 'true';
+        var inlineType = wantsDownload ? null : inlineContentType(entry);
+        if (inlineType) {
+            // Pre-set Content-Type so res.sendFile won't override it from the file
+            // extension; inline disposition lets the browser preview it.
+            res.setHeader("Content-Type", inlineType);
+            res.setHeader("Content-Disposition", 'inline; filename="' + safe + '"');
+            return res.sendFile(path.resolve(diskPath));
+        }
+        res.setHeader("Content-Type", "application/octet-stream");
+        res.setHeader("Content-Disposition", 'attachment; filename="' + safe + '"');
+        return res.sendFile(path.resolve(diskPath));
+    }
+
+    // --- Public (unauthenticated) attachment access -------------------------
+    // Mounted in app.js BEFORE ensureAuthenticated. A file is reachable here only
+    // when its files[] entry is explicitly flagged public:true in the DB (disk
+    // presence alone is never enough).
+    var publicRouter = express.Router();
+    var publicLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, validate: { trustProxy: false } });
+
     publicRouter.get('/:id/public/file/:filename', publicLimiter, checkPattern, checkDir, async function (req, res) {
         try {
-            // No session here (unauthenticated): match by id only, unscoped by
-            // source. If the same id exists from multiple instances, first wins.
+            // No session here (unauthenticated): match by id only, unscoped by source.
             var doc = await Document.findOne(docAccess.sourceQ(opts.idpath, req.params.id, null), { projection: { files: 1 } });
             var entry = findPublicEntry(doc, req.params.filename);
-            var diskPath = safeFilePath(req.params.id, req.params.filename);
-            if (!entry || !diskPath || !fs.existsSync(diskPath)) {
-                res.status(404);
-                return res.render('publicfile', { notFound: true, title: 'Attachment not available' });
-            }
             var base = req.baseUrl + '/' + encodeURIComponent(req.params.id) + '/public/file/' + encodeURIComponent(req.params.filename);
-            var kind = previewKindFor(entry);
-            var textContent = null;
-            if (kind === 'text') {
-                var size = typeof entry.size === 'number' ? entry.size : fs.statSync(diskPath).size;
-                if (size <= 512 * 1024) {
-                    try { textContent = fs.readFileSync(diskPath, 'utf8'); } catch (e) { kind = 'none'; }
-                } else {
-                    kind = 'toobig';
-                }
-            }
-            return res.render('publicfile', {
-                title: entry.name,
-                cveId: req.params.id,
-                file: entry,
-                sizeStr: humanSize(entry.size),
-                updatedStr: entry.updatedAt ? new Date(entry.updatedAt).toUTCString() : '',
-                kind: kind,
-                textContent: textContent,
-                rawUrl: base + '/raw',
-                downloadUrl: base + '/raw?download=1'
-            });
+            return renderLanding(req, res, entry, base);
         } catch (e) {
             res.status(500);
             return res.json({ type: 'err', msg: toErrorMessage(e) });
         }
     });
 
-    // Raw bytes. Inline (preview) for a safelist of inert types; ?download=1
-    // forces an attachment for ANY type. nosniff + an explicit Content-Type keep
-    // user-uploaded content from being sniffed or executed in our origin.
     publicRouter.get('/:id/public/file/:filename/raw', publicLimiter, checkPattern, checkDir, async function (req, res) {
         try {
             var doc = await Document.findOne(docAccess.sourceQ(opts.idpath, req.params.id, null), { projection: { files: 1 } });
             var entry = findPublicEntry(doc, req.params.filename);
-            var diskPath = safeFilePath(req.params.id, req.params.filename);
-            if (!entry || !diskPath || !fs.existsSync(diskPath)) {
-                res.status(404);
-                return res.json({ type: 'err', msg: 'Not found.' });
-            }
-            var safe = sanitizeFile(req.params.filename);
-            res.setHeader("X-Content-Type-Options", "nosniff");
-            var wantsDownload = req.query.download === '1' || req.query.download === 'true';
-            var inlineType = wantsDownload ? null : inlineContentType(entry);
-            if (inlineType) {
-                // Pre-set Content-Type so res.sendFile won't override it from the
-                // file extension; inline disposition lets the browser preview it.
-                res.setHeader("Content-Type", inlineType);
-                res.setHeader("Content-Disposition", 'inline; filename="' + safe + '"');
-                return res.sendFile(path.resolve(diskPath));
-            }
-            // Unsafe to render inline (or explicit download): force a download.
-            res.setHeader("Content-Type", "application/octet-stream");
-            res.setHeader("Content-Disposition", 'attachment; filename="' + safe + '"');
-            return res.sendFile(path.resolve(diskPath));
+            return serveRaw(req, res, entry);
         } catch (e) {
             res.status(500);
             return res.json({ type: 'err', msg: toErrorMessage(e) });
