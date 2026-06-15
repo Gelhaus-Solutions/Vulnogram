@@ -151,17 +151,14 @@ block content
 
     if doc && doc.body
         script getChanges("#{doc_id}");
+    if opts && opts.conf && opts.conf.files
+        script getFiles("#{doc_id}");
     +alertDialog
 
 block subcontent
     if !min
         include subcontent
         - var id = doc_id;
-        if doc && opts && opts.conf && opts.conf.files
-            - var files = [];
-            if doc && doc.files
-                - files = doc.files;
-            +files
         +commentBox
         if doc && Object.keys(doc).length > 0
             script

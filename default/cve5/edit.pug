@@ -157,6 +157,18 @@ block customtabs
         .fil.bort.pad.hid#nvdrefTabPanel
             p.sml.tgrey Read-only reference data from the local NVD mirror.
             div.render#nvdRefRender
+        if opts && opts.conf && opts.conf.files
+            input.tab(name='tabs', type='radio', id='filesTab', value="7")
+            label.lbl(for='filesTab') Attachments
+            .fil.bort.pad#filesTabPanel
+                p.sml.tgrey Upload files while drafting; toggle one public (globe) to get an unauthenticated link you can add to References as a PoC.
+                #fileList
+                form.pad
+                    input.fbn(id="file1", name="file1", type='file', multiple=true, onchange='preview(this,event)')
+                    input.txt(size="40em", name="comment", placeholder="Description of the attachment(s)")
+                    button.btn.vgi-indent.save#upb(onclick="attach(this, event)") Attach
+                    progress.hid(name="prg")
+                    div.indent.indent(class="filePreview")
 
 block prepend content
     dialog.dlg.bor.rndx.shd#cveErrorsModal

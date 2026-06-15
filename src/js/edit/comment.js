@@ -61,12 +61,15 @@ async function setComments(id, cs) {
     });
 }
 
-async function getFiles() {
-    var json = await getSubDocs('files', getDocID());
-    document.getElementById('fileList').innerHTML = subdocRender({
+async function getFiles(id) {
+    var el = document.getElementById('fileList');
+    if (!el) return;
+    id = id || getDocID();
+    var json = await getSubDocs('files', id);
+    el.innerHTML = subdocRender({
         ctemplate: 'fileList',
         files: json,
-        doc_id: getDocID()
+        doc_id: id
     });
 }
 function fileDelete(m) {
