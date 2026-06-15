@@ -9,6 +9,10 @@ module.exports = {
     conf: {
         title: 'CVE: Common Vulnerabilities and Exposures',
         name: 'CVE',
+        // Attachment storage directory (enables the attachments feature). Driven by
+        // env so a deployment can point it at the Docker volume path without
+        // committing a path. Unset => attachments disabled.
+        files: process.env.VULNOGRAM_FILES_DIR || undefined,
         uri: '/cve5/',
         class: 'vgi-cvev',
         disableDrafts: false,
