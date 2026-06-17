@@ -4727,8 +4727,6 @@ function save(e, onSuccess) {
             showAlert(error + ' Try reloading the page.');
             errMsg.textContent = error + ' Try reloading the page.';
         });
-    // This is a trick for brower auto completion to work
-        document.getElementById('docEditor').submit();
 }
 
 function getDocID() {
@@ -4793,8 +4791,6 @@ function downloadFile(event, link) {
     });
     link.href = URL.createObjectURL(file);
     link.download = file.name;
-    // trick to get autocomplete work
-    document.getElementById('docEditor').submit();
 }
 
 function downloadText(element, link) {
