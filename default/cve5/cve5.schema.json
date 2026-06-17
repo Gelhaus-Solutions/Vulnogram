@@ -2968,6 +2968,7 @@
                   "class": "vgi-title"
                 },
                 "pattern": "^CVSS:4[.]0\/AV:[NALP]\/AC:[LH]\/AT:[NP]\/PR:[NLH]\/UI:[NPA]\/VC:[HLN]\/VI:[HLN]\/VA:[HLN]\/SC:[HLN]\/SI:[HLN]\/SA:[HLN](\/E:[XAPU])?(\/CR:[XHML])?(\/IR:[XHML])?(\/AR:[XHML])?(\/MAV:[XNALP])?(\/MAC:[XLH])?(\/MAT:[XNP])?(\/MPR:[XNLH])?(\/MUI:[XNPA])?(\/MVC:[XNLH])?(\/MVI:[XNLH])?(\/MVA:[XNLH])?(\/MSC:[XNLH])?(\/MSI:[XNLHS])?(\/MSA:[XNLHS])?(\/S:[XNP])?(\/AU:[XNY])?(\/R:[XAUI])?(\/V:[XDC])?(\/RE:[XLMH])?(\/U:(X|Clear|Green|Amber|Red))?$",
+                "format": "cvssvector",
                 "template": "cvssjs.vector4(context)",
                 "watch": {
                   "attackVector": "cvss4.attackVector",
@@ -3271,6 +3272,7 @@
                   "class": "vgi-title"
                 },
                 "pattern": "^CVSS:3.[0-1]/((AV:[NALP]|AC:[LH]|PR:[UNLH]|UI:[NR]|S:[UC]|[CIA]:[NLH]|E:[XUPFH]|RL:[XOTWU]|RC:[XURC]|[CIA]R:[XLMH]|MAV:[XNALP]|MAC:[XLH]|MPR:[XUNLH]|MUI:[XNR]|MS:[XUC]|M[CIA]:[XNLH])/)*(AV:[NALP]|AC:[LH]|PR:[UNLH]|UI:[NR]|S:[UC]|[CIA]:[NLH]|E:[XUPFH]|RL:[XOTWU]|RC:[XURC]|[CIA]R:[XLMH]|MAV:[XNALP]|MAC:[XLH]|MPR:[XUNLH]|MUI:[XNR]|MS:[XUC]|M[CIA]:[XNLH])$",
+                "format": "cvssvector",
                 "template": "cvssjs.vector3(context)",
                 "watch": {
                   "attackVector": "cvss3.attackVector",
@@ -3289,6 +3291,23 @@
                     "href": "'https://cvss.js.org/#' + context.self",
                     "title": "CVSS Calculator",
                     "rel": "' Open in CVSS Calculator'"
+                  },
+                  {
+                    "place": "header",
+                    "target": "_self",
+                    "class": "indent vgi-copy",
+                    "href": "'javascript:copyToClipboard(\"' + cvssjs.vector3(context) + '\");void(0);'",
+                    "title": "Copy Vector",
+                    "rel": "' Copy'"
+                  },
+                  {
+                    "place": "header",
+                    "target": "_self",
+                    "class": "indent vgi-in",
+                    "href": "'javascript:void(0);'",
+                    "onclick": "'return pasteCvssVectorFromClipboard(this);'",
+                    "title": "Paste CVSS Vector text",
+                    "rel": "' Paste'"
                   }
                 ]
               }
@@ -3494,6 +3513,7 @@
                   "class": "vgi-title"
                 },
                 "pattern": "^((AV:[NAL]|AC:[LMH]|Au:[MSN]|[CIA]:[NPC]|E:(U|POC|F|H|ND)|RL:(OF|TF|W|U|ND)|RC:(UC|UR|C|ND)|CDP:(N|L|LM|MH|H|ND)|TD:(N|L|M|H|ND)|[CIA]R:(L|M|H|ND))/)*(AV:[NAL]|AC:[LMH]|Au:[MSN]|[CIA]:[NPC]|E:(U|POC|F|H|ND)|RL:(OF|TF|W|U|ND)|RC:(UC|UR|C|ND)|CDP:(N|L|LM|MH|H|ND)|TD:(N|L|M|H|ND)|[CIA]R:(L|M|H|ND))$",
+                "format": "cvssvector",
                 "template": "cvssjs.vector2(context)",
                 "watch": {
                   "accessVector": "cvss2.accessVector",
@@ -3502,7 +3522,26 @@
                   "confidentialityImpact": "cvss2.confidentialityImpact",
                   "integrityImpact": "cvss2.integrityImpact",
                   "availabilityImpact": "cvss2.availabilityImpact"
-                }
+                },
+                "links": [
+                  {
+                    "place": "header",
+                    "target": "_self",
+                    "class": "indent vgi-copy",
+                    "href": "'javascript:copyToClipboard(\"' + cvssjs.vector2(context) + '\");void(0);'",
+                    "title": "Copy Vector",
+                    "rel": "' Copy'"
+                  },
+                  {
+                    "place": "header",
+                    "target": "_self",
+                    "class": "indent vgi-in",
+                    "href": "'javascript:void(0);'",
+                    "onclick": "'return pasteCvssVectorFromClipboard(this);'",
+                    "title": "Paste CVSS Vector text",
+                    "rel": "' Paste'"
+                  }
+                ]
               }
             },
             "required": [

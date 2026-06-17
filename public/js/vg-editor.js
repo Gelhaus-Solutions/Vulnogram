@@ -3924,6 +3924,58 @@ JSONEditor.defaults.resolvers.unshift(function (schema) {
         return "simplehtml";
     }
 });
+
+// Editable CVSS "Vector" field. The base string editor renders template-driven
+// fields read-only; this subclass re-enables the input so a vector can be typed or
+// pasted directly, then routes the edit through pasteCvssVector() (default/cve5/script.js)
+// which parses it into the sibling metric radios and recalculates the score. The
+// template still runs to regenerate the canonical vector from the radios (radios -> vector),
+// so this only adds the reverse direction (vector -> radios).
+JSONEditor.defaults.editors.cvssvector = class cvssvector extends JSONEditor.defaults.editors.string {
+    afterInputReady() {
+        super.afterInputReady();
+        if (!this.input) {
+            return;
+        }
+        // The base afterInputReady() disables template-bound inputs; re-enable for editing.
+        this.always_disabled = false;
+        this.input.disabled = false;
+        this.input.removeAttribute('readonly');
+
+        var self = this;
+        // Capture what the user actually typed/pasted on 'input' (fires before 'change'),
+        // so the base 'change' handler's revert-to-template can't clobber what we read.
+        // typed === null means "no user edit pending", which also ignores programmatic
+        // template re-renders (those set .value directly and fire no 'input' event).
+        var typed = null;
+        var onInput = function () { typed = self.input.value; };
+        var commit = function () {
+            if (typed === null) { return; }
+            var raw = typed;
+            typed = null;
+            if (String(raw).trim() === '') { return; } // ignore clears
+            if (self.parent && typeof pasteCvssVector === 'function') {
+                // this.parent is the cvssVX_X object editor; .path is what getEditor() expects.
+                pasteCvssVector(raw, self.parent.path);
+            }
+        };
+        this.input.addEventListener('input', onInput);
+        this.input.addEventListener('change', commit);
+        this.input.addEventListener('blur', commit);
+        this.input.addEventListener('paste', function () {
+            window.setTimeout(function () { onInput(); commit(); }, 0);
+        });
+        this.input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { commit(); }
+        });
+    }
+};
+
+JSONEditor.defaults.resolvers.unshift(function (schema) {
+    if (schema.type === "string" && schema.format === "cvssvector") {
+        return "cvssvector";
+    }
+});
 /*
 JSONEditor.defaults.editors.upload =
     JSONEditor.defaults.editors.upload.extend({
