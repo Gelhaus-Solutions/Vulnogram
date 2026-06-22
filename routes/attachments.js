@@ -1,6 +1,5 @@
 const express = require('express');
-const csurf = require('csurf');
-var csrfProtection = csurf();
+const csrfProtection = require('../lib/csrf');
 const path = require('path');
 const os = require('os');
 const Busboy = require('busboy');
@@ -103,7 +102,11 @@ module.exports = function (Document, opts) {
         var hadError = false;
         // busboy v1.x exports a factory (not a constructor) and emits 'file' with
         // an info object { filename, encoding, mimeType } as the 3rd argument.
-        var busboy = Busboy({ headers: req.headers });
+        // Cap upload size/count so a huge or runaway multipart body can't fill
+        // the disk or exhaust memory/handles. Oversized files are truncated by
+        // busboy (the 'limit' event) and cleaned up below.
+        var maxFileBytes = (opts.conf && opts.conf.maxAttachmentBytes) || (50 * 1024 * 1024);
+        var busboy = Busboy({ headers: req.headers, limits: { fileSize: maxFileBytes, files: 25, fields: 50 } });
         busboy.on('field', function (fieldname, val) {
             if (fieldname == 'comment') {
                 comment = val;
@@ -124,7 +127,12 @@ module.exports = function (Document, opts) {
                 docDir = path.join(docDir, 'file');
                 if (!fs.existsSync(docDir)) { fs.mkdirSync(docDir); }
 
-                var safeName = cleanFilename(filename);
+                var safeName = sanitizeFile(filename || '');
+                if (!safeName) {
+                    file.resume();
+                    hadError = true;
+                    return;
+                }
                 var pn = path.normalize(path.join(docDir, safeName));
                 if (!pn.startsWith(docDir)) {
                     file.resume();
@@ -132,12 +140,20 @@ module.exports = function (Document, opts) {
                     return;
                 }
                 var w = fs.createWriteStream(pn);
+                var truncated = false;
+                file.on('limit', function () { truncated = true; });
                 await new Promise(function (resolve, reject) {
                     file.on('error', reject);
                     w.on('error', reject);
                     w.on('finish', resolve);
                     file.pipe(w);
                 });
+                if (truncated) {
+                    // file exceeded maxFileBytes: drop the partial write
+                    try { fs.unlinkSync(pn); } catch (e) { /* best effort */ }
+                    hadError = true;
+                    return;
+                }
                 var [ftype, fsubtype] = mimetype ? mimetype.split('/', 2) : ['unknown', 'unknown'];
                 var nf = {
                     "name": safeName,

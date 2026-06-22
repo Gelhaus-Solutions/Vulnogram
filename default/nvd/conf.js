@@ -101,6 +101,12 @@ facet: {
         path: 'cve.configurations.nodes.cpeMatch.criteria',
         chart: true,
         hideColumn: true,
+        // Collapsed by default: there are tens of thousands of vendors, so the
+        // chart is hidden until the user clicks to expand it (see views/list.pug
+        // + the .chart.collapsed CSS). The $limit keeps only the top vendors so we
+        // neither render a huge DOM wall nor blow the 16MB BSON cap when this
+        // chart is precomputed into the single nvd_stats document.
+        collapsed: true,
         pipeline: [
             { $unwind: "$cve.configurations" },
             { $unwind: "$cve.configurations.nodes" },
@@ -116,6 +122,8 @@ facet: {
                 }
             }, {
                 $sortByCount: "$vendor"
+            }, {
+                $limit: 50
             }
         ]
     },

@@ -1517,8 +1517,9 @@ async function sendComment(f) {
     if (f.date && f.date.value) {
         comment.date = f.date.value;
     }
+    var response;
     try {
-        var response = await fetch('comment/', {
+        response = await fetch('comment/', {
             method: 'POST',
             credentials: 'include',
             headers: {
@@ -1529,9 +1530,10 @@ async function sendComment(f) {
             body: JSON.stringify(comment),
         });
     } catch (e) {
-        //console.log('fetch failed ' + e)
+        alert('Failed to add comment (network error). Please reload the page and try again.');
+        return;
     }
-    if (response.ok) {
+    if (response && response.ok) {
         try {
             var json = await response.json();
             if (json.ok) {
@@ -1830,6 +1832,12 @@ function upload(type, files, comment, cbs) {
                 }
             } else if (xhr.status === 404) {
                 cbs.failure('Upload failed: ID Not found. Try saving document first!');
+            } else if (xhr.status === 403) {
+                cbs.failure('Upload failed: your session expired or you lack permission. Reload the page and try again.');
+            } else {
+                var msg = '';
+                try { msg = (JSON.parse(xhr.responseText) || {}).msg || ''; } catch (e) {}
+                cbs.failure('Upload failed (' + xhr.status + (msg ? '): ' + msg : ')'));
             }
         }
     };
@@ -4730,7 +4738,23 @@ function loadJSON(res, id, message, editorOptions) {
     });
 }
 
-function save(e, onSuccess) {
+// Fetch a fresh CSRF token and update the page-global token + meta tag, to recover
+// from a stale-token 403 after the page has been open a while (idle/session change).
+function refreshCsrfToken() {
+    return fetch('/users/csrf', { credentials: 'include', headers: { 'Accept': 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+            if (d && d.csrfToken) {
+                csrfToken = d.csrfToken;
+                var m = document.querySelector('meta[name="csrf-token"]');
+                if (m) { m.setAttribute('content', d.csrfToken); }
+            }
+            return d && d.csrfToken;
+        })
+        .catch(function () { return null; });
+}
+
+function save(e, onSuccess, _retried) {
     var j = mainTabGroup.getValue();
     if (!j){
         return;
@@ -4748,12 +4772,17 @@ function save(e, onSuccess) {
             body: JSON.stringify(j),
         })
         .then(function (response) {
+            if (response.status === 403 && !_retried) {
+                // CSRF token likely went stale: refresh it and retry the save once.
+                return refreshCsrfToken().then(function () { save(e, onSuccess, true); return null; });
+            }
             if (!response.ok) {
                 throw Error(response.statusText);
             }
             return response.json();
         })
         .then(function (res) {
+            if (res === null) return; // handled by the retry above
             if (res.type == "go") {
                 window.location.href = res.to;
             } else if (res.type == "err") {

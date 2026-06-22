@@ -1,6 +1,5 @@
 const express = require('express');
-const csurf = require('csurf');
-var csrfProtection = csurf();
+const csrfProtection = require('../lib/csrf');
 const textUtil = require('../src/js/edit/util.js');
 var jsonpatch = require('json-patch-extended');
 var _ = require('lodash');
@@ -11,6 +10,7 @@ const rbac = require('../lib/rbac');
 const Team = require('../models/team');
 const workflow = require('../lib/cna-workflow');
 const notify = require('../lib/notify');
+const cache = require('../lib/cache');
 
 const {
     check,
@@ -21,6 +21,11 @@ const validator = require('validator');
 
 module.exports = function (Document, opts) {
     var idRegex = new RegExp('^' + opts.idpattern + '$');
+    // Drop this section's cached list/page/agg results after any write so readers
+    // don't see stale data. Fire-and-forget; a no-op when Redis caching is off.
+    function bustListCache() {
+        try { cache.delByPrefix('q:' + opts.schemaName + ':'); } catch (e) { /* ignore */ }
+    }
     function ensureRouteID(req, res, next) {
         if (idRegex.test(req.params.id)) {
             return next();
@@ -282,6 +287,7 @@ module.exports = function (Document, opts) {
             var inserted = await Document.insertOne(entry);
             var doc = Object.assign({}, entry, { _id: inserted.insertedId });
             addHistory(null, doc);
+            bustListCache();
             res.json({
                 type: 'go',
                 to: _.get(doc, opts.idpath)
@@ -360,6 +366,20 @@ module.exports = function (Document, opts) {
                 setOnInsert.team = newPteam;
                 setOnInsert.visibility = newPteam ? 'team' : 'private';
                 setOnInsert.sharedWith = [];
+            } else if (opts.conf && opts.conf.teamScoped && targetDoc && !targetDoc.team) {
+                // Backfill team scoping on a legacy/untagged doc when it is edited.
+                // $setOnInsert only fires on insert, so without this an existing
+                // doc never gets a team -> the team column stays blank AND, because
+                // doc-access treats a missing team as world-visible, it is an access
+                // gap. Only fill fields that are actually missing; never override an
+                // existing team (that is what /share is for).
+                var backfillTeam = docAccess.resolveOwningTeam(req.user, req.session && req.session.activeTeam);
+                if (backfillTeam) {
+                    newDoc.team = backfillTeam;
+                    if (targetDoc.owner === undefined) newDoc.owner = req.user.username;
+                    if (targetDoc.visibility === undefined) newDoc.visibility = 'team';
+                    if (targetDoc.sharedWith === undefined) newDoc.sharedWith = [];
+                }
             }
             // Decide how the doc is matched and how `source` (the instance tag) is set.
             // IMPORTANT: never set `source` in both $set and $setOnInsert (Mongo rejects
@@ -401,6 +421,7 @@ module.exports = function (Document, opts) {
                 var insertedDoc = await loadOneBySource(inputID, req);
                 addHistory(null, insertedDoc || newDoc);
             }
+            bustListCache();
             if (opts.conf && opts.conf.teamScoped && typeof toState !== 'undefined' && fromState !== toState) {
                 try {
                     await Document.updateOne({ _id: targetDoc._id }, {
@@ -454,6 +475,7 @@ module.exports = function (Document, opts) {
                 }
             }
             await Document.deleteOne(query);
+            bustListCache();
             res.send('Deleted');
         } catch (err) {
             res.send('Error Deleting');
@@ -512,6 +534,16 @@ module.exports = function (Document, opts) {
             var allTeams = await Team.find({}, { projection: { key: 1 } });
             var validKeys = allTeams.map(function (t) { return t.key; });
             var team = validKeys.indexOf(req.body.team) >= 0 ? req.body.team : doc.team;
+            // Don't let an editor move a doc into a team they don't belong to (they'd
+            // lose access and hand it to another tenant). Instance-wide writers may.
+            if (team !== doc.team) {
+                var instCaps = rbac.instanceCapabilities(req.user);
+                var instanceWideWrite = instCaps.has(rbac.WILDCARD) || instCaps.has(rbac.CAPABILITIES.CVE_EDIT);
+                if (!instanceWideWrite && !docAccess.userInTeam(req.user, team)) {
+                    res.status(403);
+                    return res.render('blank', { title: 'Forbidden', message: 'You can only assign this CVE to a team you belong to.' });
+                }
+            }
             var visibility = req.body.visibility === 'private' ? 'private' : 'team';
             var sharedWith = req.body.sharedWith;
             if (typeof sharedWith === 'string') { sharedWith = [sharedWith]; }
@@ -519,6 +551,7 @@ module.exports = function (Document, opts) {
             sharedWith = sharedWith.filter(function (k) { return validKeys.indexOf(k) >= 0 && k !== team; });
             var folder = (req.body.folder || '').trim().substring(0, 80);
             await Document.findOneAndUpdate(q, { $set: { team: team, visibility: visibility, sharedWith: sharedWith, folder: folder } });
+            bustListCache();
             req.flash('success', 'Sharing updated for ' + req.params.id);
             res.redirect('/' + opts.schemaName + '/' + req.params.id);
         } catch (err) {
@@ -551,6 +584,7 @@ module.exports = function (Document, opts) {
                 await Document.updateOne(q, { $addToSet: { watchers: req.user.username } });
                 watching = true;
             }
+            bustListCache();
             res.json({ type: 'ok', watching: watching });
         } catch (err) {
             res.json({ type: 'err', msg: err.message });
@@ -574,6 +608,7 @@ module.exports = function (Document, opts) {
             }
             var folder = (req.body.folder || '').trim().substring(0, 80);
             await Document.updateOne(q, { $set: { folder: folder } });
+            bustListCache();
             res.json({ type: 'ok', folder: folder });
         } catch (err) {
             res.json({ type: 'err', msg: err.message });

@@ -15,7 +15,7 @@ const Team = require('../models/team');
 const Role = require('../models/role');
 const conf = require('../config/conf');
 const { normalizePortalUrl } = require('../lib/portal-url');
-const csurf = require('csurf');
+const csrfProtection = require('../lib/csrf');
 const {
     matchedData,
     check,
@@ -23,7 +23,6 @@ const {
 } = require('express-validator');
 
 const validator = require('validator');
-var csrfProtection = csurf();
 const profileRoutes = ['/profile', '/profile/:id'];
 
 // Users who share at least one team with the given user (for the CVE owner picker).
@@ -287,7 +286,9 @@ protected.get('/delete/:id', csrfProtection, function (req, res) {
 public.get('/login', csrfProtection, function (req, res) {
     res.render('users/login', {
         title: 'Vulnogram',
-        csrfToken: req.csrfToken()
+        csrfToken: req.csrfToken(),
+        oidcEnabled: !!(conf.oidc && conf.oidc.enabled && conf.oidc.ready),
+        oidcLabel: (conf.oidc && conf.oidc.buttonLabel) || 'Sign in with SSO'
     });
 });
 
@@ -310,6 +311,37 @@ public.get('/logout', function (req, res, next) {
         req.flash('success', 'You are logged out');
         res.redirect('/users/login');
     });
+});
+
+// SSO (OIDC). Redirect flows: CSRF is covered by the OIDC `state` parameter, so
+// these are intentionally NOT behind csurfProtection. Guarded by conf.oidc.ready
+// (set true once discovery succeeds at boot).
+public.get('/auth/oidc', function (req, res, next) {
+    if (!(conf.oidc && conf.oidc.enabled && conf.oidc.ready)) {
+        req.flash('error', 'SSO is not available.');
+        return res.redirect('/users/login');
+    }
+    passport.authenticate('oidc')(req, res, next);
+});
+
+public.get('/auth/oidc/callback', function (req, res, next) {
+    if (!(conf.oidc && conf.oidc.enabled && conf.oidc.ready)) {
+        return res.redirect('/users/login');
+    }
+    // returnTo is preserved across the OIDC redirect by the middleware in app.js.
+    var dest = (req.session && req.session.returnTo) || '/home';
+    passport.authenticate('oidc', function (err, user, info) {
+        if (err) { return next(err); }
+        if (!user) {
+            req.flash('error', (info && info.message) || 'SSO sign-in failed.');
+            return res.redirect('/users/login');
+        }
+        req.logIn(user, function (e) {
+            if (e) { return next(e); }
+            req.session.returnTo = null;
+            return res.redirect(dest);
+        });
+    })(req, res, next);
 });
 
 
@@ -498,6 +530,13 @@ protected.post('/active-source', csrfProtection, function (req, res) {
         return res.json({ ok: ok, activeSource: req.session.activeSource || '' });
     }
     res.redirect(back);
+});
+
+// Issue a fresh CSRF token for long-lived pages (e.g. the editor) whose embedded
+// token may have gone stale after idle / a session change. The client calls this
+// and retries the failed request once, instead of losing the user's work.
+protected.get('/csrf', csrfProtection, function (req, res) {
+    res.json({ csrfToken: req.csrfToken() });
 });
 
 module.exports = {

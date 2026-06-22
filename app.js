@@ -9,6 +9,10 @@ const pug = require('pug');
 const session = require('express-session');
 // connect-mongo v6 is ESM-first; the CJS build exposes the store as the default export.
 const MongoStore = require('connect-mongo').default;
+// Optional Redis: shared session store + query cache (lib/cache is fail-open).
+const cache = require('./lib/cache');
+let RedisStore = null;
+try { RedisStore = require('connect-redis').default; } catch (e) { RedisStore = null; }
 
 const passport = require('passport');
 const crypto = require('crypto');
@@ -117,6 +121,11 @@ function resolveSessionSecret() {
     if (process.env.SESSION_SECRET) {
         return process.env.SESSION_SECRET;
     }
+    if (process.env.NODE_ENV === 'production') {
+        console.warn('WARNING: SESSION_SECRET is not set. A per-instance secret will be generated, '
+            + 'which breaks sessions across multiple instances and causes random "invalid csrf token" '
+            + 'errors. Set a single shared SESSION_SECRET (identical on every instance).');
+    }
     const secretPath = path.join(__dirname, 'config', '.session-secret');
     try {
         const existing = fs.readFileSync(secretPath, 'utf8').trim();
@@ -144,21 +153,43 @@ function sessionDbName(uri) {
     }
 }
 
-// Sessions persist in MongoDB (connect-mongo) instead of memory, so a restart no
-// longer logs everyone out and the app can run multiple processes.
-const sessionMiddleware = session({
-    secret: resolveSessionSecret(),
-    resave: false,
-    saveUninitialized: true,
-    store: MongoStore.create({
+// Connect the optional Redis cache (used for the query cache and, when enabled,
+// the shared session store). No-op when REDIS_URL is unset or ioredis is missing.
+cache.connect(conf.redisUrl);
+
+// Choose the session store. With Redis configured (and not forced to 'mongo'),
+// sessions live in a SHARED Redis store so every app instance reads the same
+// session (and the same req.session.csrfSecret) — the core fix for the random /
+// after-idle "invalid csrf token" errors. Otherwise sessions persist in MongoDB
+// (survives restarts, multi-process), as before.
+const useRedisSessions = !!conf.redisUrl && conf.sessionStore !== 'mongo' && !!RedisStore;
+let sessionStore;
+if (useRedisSessions) {
+    sessionStore = new RedisStore({ client: cache.getClient(), prefix: 'sess:', ttl: 14 * 24 * 60 * 60 });
+    console.log('Sessions: Redis store');
+} else {
+    sessionStore = MongoStore.create({
         mongoUrl: conf.database,
         dbName: sessionDbName(conf.database),
         collectionName: 'sessions',
         ttl: 14 * 24 * 60 * 60
-    }),
+    });
+    if (conf.redisUrl && conf.sessionStore === 'mongo') {
+        console.log('Sessions: MongoDB store (Redis used for query cache only)');
+    }
+}
+
+const sessionMiddleware = session({
+    secret: resolveSessionSecret(),
+    resave: false,
+    // Don't persist a session row for every anonymous visitor. csurf still works:
+    // generating a token modifies the session, which marks it to be saved.
+    saveUninitialized: false,
+    store: sessionStore,
     cookie: {
       httpOnly: true,
-      secure: useSecureCookie
+      secure: useSecureCookie,
+      sameSite: 'lax'
     }
 });
 app.use(sessionMiddleware);
@@ -212,10 +243,11 @@ app.use(ensureConnected);
 app.use(function (req, res, next) {
     res.setHeader('X-Frame-Options', 'SAMEORIGIN');
     res.setHeader('X-XSS-Protection', '1; mode=block');
-    res.setHeader("Access-Control-Allow-Origin", "*");// XXX investigate
-    res.setHeader("Access-Control-Request-Headers", "cve-api-cna,cve-api-secret,cve-api-submitter");
+    // CORS removed: the UI is same-origin, and a wildcard Access-Control-Allow-Origin
+    // is a footgun. (The previous Access-Control-Request-Headers line was also a
+    // request-header name mistakenly emitted as a response header.)
 
-    if (req.path != '/users/login' && req.session.returnTo) {
+    if (req.path != '/users/login' && req.path.indexOf('/users/auth/oidc') !== 0 && req.session.returnTo) {
         delete req.session.returnTo
     }
     next()
@@ -356,6 +388,36 @@ async function bootstrap() {
 
     app.get('/', function (req, res, next) {
         res.redirect(conf.homepage ? conf.homepage : '/home');
+    });
+
+    // Terminal error handler (must be last). A bad/stale CSRF token is the common
+    // "random / after-idle" failure: turn it into a graceful, recoverable response
+    // (JSON for AJAX so the client can refresh+retry; otherwise flash + redirect
+    // back to the form, where a fresh token is issued) instead of leaking a raw
+    // error. Everything else renders a themed page and never exposes a stack.
+    app.use(function (err, req, res, next) {
+        if (res.headersSent) { return next(err); }
+        if (err && err.code === 'EBADCSRFTOKEN') {
+            res.status(403);
+            var acceptsJson = req.xhr || ((req.get && (req.get('accept') || '')).indexOf('json') !== -1);
+            if (acceptsJson) {
+                return res.json({ type: 'err', code: 'EBADCSRFTOKEN', msg: 'Your session expired. Reload the page and try again.' });
+            }
+            if (req.flash) { req.flash('error', 'Your session expired or the page was open too long. Please try again.'); }
+            var ref = req.get && req.get('referer');
+            var dest = '/';
+            if (ref) {
+                try { if (new URL(ref).host === req.get('host')) { dest = ref; } } catch (e) { /* ignore */ }
+            }
+            return res.redirect(dest);
+        }
+        console.error('Unhandled request error:', err && err.stack ? err.stack : err);
+        res.status(err && err.status ? err.status : 500);
+        try {
+            return res.render('blank', { title: 'Error', message: 'Something went wrong. Please try again.' });
+        } catch (e) {
+            return res.type('text/plain').send('Something went wrong. Please try again.');
+        }
     });
 
     const realtimeEnabled = !conf.realtime || conf.realtime.enabled !== false;

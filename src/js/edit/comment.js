@@ -17,8 +17,9 @@ async function sendComment(f) {
     if (f.date && f.date.value) {
         comment.date = f.date.value;
     }
+    var response;
     try {
-        var response = await fetch('comment/', {
+        response = await fetch('comment/', {
             method: 'POST',
             credentials: 'include',
             headers: {
@@ -29,9 +30,10 @@ async function sendComment(f) {
             body: JSON.stringify(comment),
         });
     } catch (e) {
-        //console.log('fetch failed ' + e)
+        alert('Failed to add comment (network error). Please reload the page and try again.');
+        return;
     }
-    if (response.ok) {
+    if (response && response.ok) {
         try {
             var json = await response.json();
             if (json.ok) {
@@ -330,6 +332,12 @@ function upload(type, files, comment, cbs) {
                 }
             } else if (xhr.status === 404) {
                 cbs.failure('Upload failed: ID Not found. Try saving document first!');
+            } else if (xhr.status === 403) {
+                cbs.failure('Upload failed: your session expired or you lack permission. Reload the page and try again.');
+            } else {
+                var msg = '';
+                try { msg = (JSON.parse(xhr.responseText) || {}).msg || ''; } catch (e) {}
+                cbs.failure('Upload failed (' + xhr.status + (msg ? '): ' + msg : ')'));
             }
         }
     };

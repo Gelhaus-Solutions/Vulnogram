@@ -3,8 +3,7 @@ const docModel = require('../models/doc');
 const conf = require('../config/conf');
 const querymw = require('../lib/querymw');
 const package = require('../package.json');
-const csurf = require('csurf');
-var csrfProtection = csurf();
+const csrfProtection = require('../lib/csrf');
 var querymen = require('querymen');
 var qs = require('querystring');
 const _ = require('lodash');
@@ -12,6 +11,7 @@ const path = require('path');
 const toErrorMessage = require('../lib/error-message');
 const docAccess = require('../lib/doc-access');
 const nvdStats = require('../lib/nvd-stats');
+const cache = require('../lib/cache');
 
 var queryMW;
 var queryMWBody;
@@ -238,11 +238,9 @@ module.exports = function (name, opts) {
     for (var x in toIndex) {
         var o = {};
         o[x] = toIndex[x];
-        delete o.createIndex;
         Document.createIndex(o, { background: true }).catch(function (e) {
-            console.log('Error ensuring text index: ' + e.message)
+            console.log('Error ensuring index: ' + e.message)
         });
-
     }
 
     if (opts.conf && opts.conf.teamScoped) {
@@ -260,6 +258,16 @@ module.exports = function (name, opts) {
         srcIdIdx[idpath] = 1;
         Document.createIndex(srcIdIdx, { background: true }).catch(function (e) {
             console.log('Error ensuring source+id index: ' + e.message);
+        });
+        // Free-text search: the `q` param builds a $text/$search query, which requires
+        // a text index. One wildcard text index covers arbitrary CVE content; without
+        // it free-text search throws (MongoServerError 27) on a fresh deploy.
+        Document.createIndex({ '$**': 'text' }, { background: true }).catch(function (e) {
+            console.log('Error ensuring text index: ' + e.message);
+        });
+        // Back the common "recently updated" sort.
+        Document.createIndex({ updatedAt: -1 }, { background: true }).catch(function (e) {
+            console.log('Error ensuring updatedAt index: ' + e.message);
         });
     }
 
@@ -571,92 +579,97 @@ module.exports = function (name, opts) {
     router.get('/', csrfProtection, queryMW, teamScope, async function (req, res) {
         try {
 
-            var pipeLine = normalizeQuery(req.querymen.query);
-            // to get the documents
-            // get top level tabs aggregated counts
-            var tabs = [];
-            if (Object.keys(tabFacet).length != 0) {
-                //console.log('QUERY:' + JSON.stringify(req.querymen.query,2,3,4));
-                tabs = await Document.aggregate([{
-                    $facet: tabFacet
-                }]).toArray();
-            }
+            var activeTeam = req.session ? req.session.activeTeam : null;
+            var activeSource = req.session ? req.session.activeSource : null;
+            // Cache the COMPUTED DATA only (never the HTML or the CSRF token). The
+            // key includes the resolved read-scope so one team can never be served
+            // another team's cached results, plus the raw query (which determines
+            // the parsed Mongo query, pagination and sort).
+            var scopeForKey = applyReadScope({}, req.user, activeTeam, activeSource);
+            var cacheKey = cache.makeKey(['q', opts.schemaName, 'page', scopeForKey, req.query]);
+            var cacheTtl = (conf.cache && conf.cache.ttl && conf.cache.ttl[opts.schemaName] != null)
+                ? conf.cache.ttl[opts.schemaName]
+                : ((conf.cache && conf.cache.ttl) ? conf.cache.ttl.default : 45);
+            var cacheOn = !!(conf.cache && conf.cache.enabled);
 
-            // get the charts aggregated counts            
-            var sort = {};
-            if (req.querymen.cursor.sort) {
-                for (var s in req.querymen.cursor.sort) {
-                    if (opts.facet[s] && opts.facet[s].path) {
-                        sort[opts.facet[s].path] = req.querymen.cursor.sort[s];
+            async function computeListData() {
+                var pipeLine = normalizeQuery(req.querymen.query);
+                // top-level tab counts, scoped to what the user may read (see note below)
+                var tabs = [];
+                if (Object.keys(tabFacet).length != 0) {
+                    // Match the read-scope only (not the refine filters) so the tab
+                    // counts show the full distribution within what the user may see,
+                    // never leak other teams' counts, and switching tabs does not zero
+                    // the sibling counts.
+                    var tabMatch = applyReadScope({}, req.user, activeTeam, activeSource);
+                    var tabPipe = (tabMatch && Object.keys(tabMatch).length) ?
+                        [{ $match: tabMatch }, { $facet: tabFacet }] :
+                        [{ $facet: tabFacet }];
+                    tabs = await Document.aggregate(tabPipe).toArray();
+                }
+
+                var sort = {};
+                if (req.querymen.cursor.sort) {
+                    for (var s in req.querymen.cursor.sort) {
+                        if (opts.facet[s] && opts.facet[s].path) {
+                            sort[opts.facet[s].path] = req.querymen.cursor.sort[s];
+                        }
                     }
                 }
+
+                var allQuery = [];
+                if (opts.conf.unwind) {
+                    allQuery = [opts.conf.unwind];
+                }
+                if ((Object.keys(sort).length != 0)) {
+                    allQuery.push({ $sort: sort });
+                }
+                allQuery = allQuery.concat([
+                    { $skip: req.querymen.cursor.skip },
+                    { $limit: req.querymen.cursor.limit },
+                    { $project: project }
+                ]);
+
+                var docs = [];
+                var charts = [];
+                var total = 0;
+                var numCollation = { locale: "en_US", numericOrdering: true };
+                if (opts.conf && opts.conf.cachedCharts) {
+                    // Serve precomputed (global) charts from nvd_stats and query only the
+                    // paginated docs, instead of recomputing the heavy facet aggregations
+                    // (e.g. the NVD vendor CPE-unwind) on every request.
+                    total = await Document.countDocuments(req.querymen.query);
+                    var aggQueryCached = [{ $match: req.querymen.query }].concat(allQuery);
+                    docs = await Document.aggregate(aggQueryCached, { collation: numCollation }).toArray();
+                    try {
+                        var statsDoc = await nvdStats.get();
+                        charts = (statsDoc && statsDoc.charts) ? [statsDoc.charts] : [];
+                    } catch (e) {
+                        charts = [];
+                    }
+                } else if (chartCount > 0) {
+                    chartFacet.all = allQuery;
+                    pipeLine.push({ $facet: chartFacet });
+                    charts = await Document.aggregate(pipeLine, { collation: numCollation }).toArray();
+                    docs = charts[0].all;
+                    delete charts[0].all;
+                    if (charts[0] && charts[0].count && charts[0].count[0]) {
+                        total = charts[0].count[0].total;
+                    }
+                    delete charts[0].count;
+                } else {
+                    total = await Document.countDocuments(req.querymen.query);
+                    var aggQuery = [{ $match: req.querymen.query }].concat(allQuery);
+                    docs = await Document.aggregate(aggQuery, { collation: numCollation }).toArray();
+                }
+                return { docs: docs, total: total, charts: charts, tabs: tabs };
             }
 
-            var allQuery = [];
-            if (opts.conf.unwind) {
-                allQuery = [opts.conf.unwind];
-            }
-            if ((Object.keys(sort).length != 0)) {
-                allQuery.push({
-                    $sort: sort
-                });
-            }
-            allQuery = allQuery.concat([
-                {
-                    $skip: req.querymen.cursor.skip
-                },
-                {
-                    $limit: req.querymen.cursor.limit
-                },
-                {
-                    $project: project
-                }
-            ]);
-
-            //console.log('AllQuery:' + JSON.stringify(allQuery,1,1,1));
-            var docs = [];
-            var charts = [];
-            var total = 0;
-            var numCollation = { locale: "en_US", numericOrdering: true };
-            if (opts.conf && opts.conf.cachedCharts) {
-                // Serve precomputed (global) charts from nvd_stats and query only the
-                // paginated docs, instead of recomputing the heavy facet aggregations
-                // (e.g. the NVD vendor CPE-unwind) on every request.
-                total = await Document.countDocuments(req.querymen.query);
-                var aggQueryCached = [{ $match: req.querymen.query }].concat(allQuery);
-                docs = await Document.aggregate(aggQueryCached, { collation: numCollation }).toArray();
-                try {
-                    var statsDoc = await nvdStats.get();
-                    charts = (statsDoc && statsDoc.charts) ? [statsDoc.charts] : [];
-                } catch (e) {
-                    charts = [];
-                }
-            } else if (chartCount > 0) {
-                chartFacet.all = allQuery;
-                pipeLine.push({
-                    $facet: chartFacet
-                });
-                charts = await Document.aggregate(pipeLine, { collation: numCollation }).toArray();
-                //console.log('Aggregation QUERY: ' + JSON.stringify(pipeLine, null, 3));
-                docs = charts[0].all;
-                delete charts[0].all;
-                if (charts[0] && charts[0].count && charts[0].count[0]) {
-                    total = charts[0].count[0].total;
-                }
-                //console.log('Facet:' + JSON.stringify(charts,null,1))
-                delete charts[0].count;
-            } else {
-                //console.log('PROJE' + JSON.stringify(project));
-                total = await Document.countDocuments(req.querymen.query);
-                var aggQuery = [
-                    {
-                        $match: req.querymen.query
-                    }].concat(allQuery);
-                //console.log('AGG QUERY' + JSON.stringify(aggQuery,1,1,1));
-                docs = await Document.aggregate(aggQuery, { collation: numCollation }).toArray();
-                //total = docs.length;
-            }
-            //console.log('Results'+ JSON.stringify(docs,1,1,1));
+            var listData = cacheOn ? await cache.withCache(cacheKey, cacheTtl, computeListData) : await computeListData();
+            var docs = listData.docs;
+            var charts = listData.charts;
+            var tabs = listData.tabs;
+            var total = listData.total;
 
             var currentPage = 1;
             if (req.query.page) {
@@ -737,24 +750,24 @@ module.exports = function (name, opts) {
                         fq = applyReadScope(fq, req.user, null, req.session ? req.session.activeSource : null);
                         var docs = await Document.find(fq).toArray();
                         var results = [];
-                        for (var d of docs) {
-                            var updated = await Document.findOneAndUpdate(
-                                { _id: d._id }, {
-                                "$set": q,
-                                "$inc": {
-                                    __v: 1
+                        if (docs.length) {
+                            // One batched write instead of N findOneAndUpdate round-trips.
+                            var ids = docs.map(function (dd) { return dd._id; });
+                            await Document.updateMany({ _id: { $in: ids } }, { "$set": q, "$inc": { __v: 1 } });
+                            for (var d of docs) {
+                                // Reconstruct the updated doc locally (mirrors $set, incl. dotted
+                                // paths) so the history diff is accurate without a re-read.
+                                var nd = _.cloneDeep(d);
+                                for (var sk in q) { _.set(nd, sk, q[sk]); }
+                                nd.__v = (d.__v || 0) + 1;
+                                var r = onedoc.addModelHistory(History, d, nd);
+                                if (r) {
+                                    r.__v = r.__v + ' (' + _.get(nd, idpath) + ')';
+                                    results.push(r);
                                 }
-                            }, {
-                                upsert: false,
-                                returnDocument: 'after'
-                            });
-                            var result = updated;
-                            var r = result ? onedoc.addModelHistory(History, d, result) : null;
-                            if (r) {
-                                r.__v = r.__v + ' (' + _.get(result, idpath) + ')';
-                                results.push(r);
                             }
                         }
+                        try { cache.delByPrefix('q:' + opts.schemaName + ':'); } catch (e) { /* ignore */ }
                         res.render('changes', {
                             //textUtil: textUtil,
                             title: 'Bulk update results',

@@ -1,9 +1,10 @@
 const express = require('express');
-const csurf = require('csurf');
-var csrfProtection = csurf();
+const csrfProtection = require('../lib/csrf');
 const crypto = require('crypto');
 const { sanitizeRichHtml } = require('../lib/html-sanitize');
 const docAccess = require('../lib/doc-access');
+const rbac = require('../lib/rbac');
+const toErrorMessage = require('../lib/error-message');
 
 var random_slug = function () {
     return crypto.randomBytes(13).toString('base64').replace(/[\+\/\=]/g, '-');
@@ -85,9 +86,8 @@ module.exports = function (Document, opts) {
                 ret: await unifiedComments(doc_id, ret ? ret.comments : []),
             });
         } catch (e) {
-            console.log(e);
             return ({
-                msg: e
+                msg: toErrorMessage(e)
             });
         }
     }
@@ -110,21 +110,60 @@ module.exports = function (Document, opts) {
                 ret: await unifiedComments(doc_id, ret ? ret.comments : [])
             });
         } catch (e) {
-            //console.log(e);
             return ({
-                msg: e
+                msg: toErrorMessage(e)
             });
         }
     }
+    var idRegex = new RegExp('^' + opts.idpattern + '$');
+
+    // Validate the id, load the doc, and enforce team read/write access before
+    // commenting. Rejects non-string ids/slugs (which would otherwise allow NoSQL
+    // operator injection via req.body) and cross-team access (IDOR).
+    async function authorizeComment(req, res) {
+        var id = req.body.id;
+        if (typeof id !== 'string' || !idRegex.test(id)) {
+            res.json({ msg: 'Invalid document ID.' });
+            return null;
+        }
+        if (typeof req.body.text !== 'string' || !req.body.text.trim()) {
+            res.json({ msg: 'Comment text is required.' });
+            return null;
+        }
+        if (req.body.slug !== undefined && typeof req.body.slug !== 'string') {
+            res.json({ msg: 'Invalid comment reference.' });
+            return null;
+        }
+        var doc = await Document.findOne(commentIdQuery(id, req));
+        if (!doc) {
+            res.json({ msg: 'Document not found.' });
+            return null;
+        }
+        if (opts.conf && opts.conf.teamScoped) {
+            if (!docAccess.canAccessDoc(req.user, doc) ||
+                !docAccess.canWriteDoc(req.user, doc, rbac.CAPABILITIES.CVE_EDIT)) {
+                res.status(403);
+                res.json({ msg: 'You do not have permission to comment on this document.' });
+                return null;
+            }
+        }
+        return doc;
+    }
+
     var router = express.Router();
     router.post('/comment', csrfProtection, async function (req, res) {
-        if (req.body.slug) {
-            var r = await updateComment(req.body.id, req.user.username, req.body.text, req.body.slug, new Date(), req);
+        try {
+            var doc = await authorizeComment(req, res);
+            if (!doc) { return; }
+            var r;
+            if (req.body.slug) {
+                r = await updateComment(req.body.id, req.user.username, req.body.text, req.body.slug, new Date(), req);
+            } else {
+                r = await addComment(req.body.id, req.user.username, req.body.text, undefined, req);
+            }
             res.json(r);
-        } else {
-            addComment(req.body.id, req.user.username, req.body.text, undefined, req).then(r => {
-                res.json(r);
-            }).catch(function (e) { res.json({ msg: 'Error adding comment' }); });
+        } catch (e) {
+            res.json({ msg: toErrorMessage(e) });
         }
     });
     return router;

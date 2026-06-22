@@ -3,8 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
-const csurf = require('csurf');
-const csrfProtection = csurf();
+const csrfProtection = require('../lib/csrf');
 
 const Template = require('../models/template');
 const Team = require('../models/team');

@@ -19,7 +19,7 @@ mixin facetChart(facet, query, tfacet)
         if facet.length > 0 && (Object.keys(facet[0]).length)
           div.ins.hig.flx.wlp.pad
             each values, field in facet[0]
-              div.wht.rnd.shd.chart(class=field)
+              div.wht.rnd.shd.chart(class=field + ((fields[field] && fields[field].collapsed) ? ' collapsed' : ''))
                 label(for='flt'+field, class=(fields[field] && fields[field].icon ? fields[field].icon : ''))=field
                 input.expand(id="flt"+field,type="checkbox")
                 each v in values
@@ -168,7 +168,17 @@ block append bannerItemsLeft
             if (v._id == query[field] || ((typeof query[field] === 'string') && query[field].split(',').includes(v._id)) || ((query[field] instanceof Array) && query[field].includes(v._id)))
                 - active = 'pur'
                 //input(type="hidden",name=field,value=v._id)
-            a.fbn(href='/' + schemaName + '?' + field + '=' + v._id, class=(active + (tfFieldIcon ? ' ' + tfFieldIcon : '') + (tfValueIcon ? ' ' + tfValueIcon : '')), count=v.count)
+            -
+                // Preserve the currently-active filters (team, q, sort, folder, ...)
+                // when switching a tab; only override this tab's field and drop page.
+                var tabVal = v._id;
+                tabVal = (tabVal == null || tabVal === '') ? 'null' : tabVal;
+                tabVal = Array.isArray(tabVal) ? tabVal.join(',') : tabVal;
+                var tabQuery = Object.assign({}, query);
+                tabQuery[field] = tabVal;
+                delete tabQuery.page;
+                var tabHref = '/' + schemaName + '?' + (qs ? qs.stringify(tabQuery) : (field + '=' + encodeURIComponent(tabVal)));
+            a.fbn(href=tabHref, class=(active + (tfFieldIcon ? ' ' + tfFieldIcon : '') + (tfValueIcon ? ' ' + tfValueIcon : '')), count=v.count)
                 =(v._id ? v._id : 'null')
                 |  (
                 = v.count

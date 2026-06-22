@@ -40,6 +40,35 @@ module.exports = {
         apiKey: process.env.NVD_API_KEY || '',                     // optional NVD API key
         pruneOlderThanYears: Number(process.env.NVD_SYNC_PRUNE_YEARS) || 0 // opt-in cleanup after sync; 0 = keep all
     },
+    // Redis (optional) — shared session store + query cache. With REDIS_URL empty,
+    // sessions fall back to MongoDB and query caching is off; the app works either
+    // way. A shared REDIS_URL + a shared SESSION_SECRET across all instances also
+    // fixes the "random / after-idle invalid csrf token" errors (every instance
+    // then reads the same session, so req.session.csrfSecret is always present).
+    redisUrl: process.env.REDIS_URL || '',
+    sessionStore: process.env.SESSION_STORE || 'auto',     // 'auto' | 'redis' | 'mongo'
+    cache: {
+        enabled: process.env.QUERY_CACHE !== 'false',       // effective only when redisUrl is set
+        maxItemBytes: Number(process.env.QUERY_CACHE_MAX_BYTES) || 2 * 1024 * 1024,
+        ttl: {
+            nvd: Number(process.env.QUERY_CACHE_TTL_NVD) || 3600,
+            default: Number(process.env.QUERY_CACHE_TTL) || 45
+        }
+    },
+    // OIDC single sign-on (optional, env-driven). Point `issuer` at any compliant
+    // IdP base URL; discovery supplies the rest. Local login always remains.
+    oidc: {
+        enabled: process.env.OIDC_ENABLED === 'true',
+        issuer: process.env.OIDC_ISSUER || '',
+        clientID: process.env.OIDC_CLIENT_ID || '',
+        clientSecret: process.env.OIDC_CLIENT_SECRET || '',
+        callbackURL: process.env.OIDC_CALLBACK_URL || '',
+        scopes: (process.env.OIDC_SCOPES || 'openid profile email').split(/\s+/).filter(Boolean),
+        buttonLabel: process.env.OIDC_BUTTON_LABEL || 'Sign in with SSO',
+        allowedDomains: (process.env.OIDC_ALLOWED_DOMAINS || '').split(',').map(function (d) { return d.trim().toLowerCase(); }).filter(Boolean),
+        requireVerifiedEmail: process.env.OIDC_REQUIRE_VERIFIED_EMAIL !== 'false',
+        ready: false   // set true at runtime once discovery succeeds
+    },
     // Workflow notifications (opt-in). On a CVE internal-workflow stage change,
     // email watchers + assignees and/or POST a JSON payload to a webhook.
     // Everything defaults OFF; email requires the optional `nodemailer` dependency.

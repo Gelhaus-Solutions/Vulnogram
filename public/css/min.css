@@ -1114,6 +1114,18 @@ input.tab[type="radio"]+.lbl:focus {
     width: auto;
 }
 
+/* High-cardinality charts (e.g. NVD vendor) are collapsed by default: hide every
+   bar until the user clicks the chart label to expand. Other charts keep showing
+   their thin bars as before. */
+.chart.collapsed .bar {
+    display: none;
+}
+
+.chart.collapsed .expand:checked~.bar {
+    display: inline-table;
+    width: auto;
+}
+
 .chart {
     box-sizing: border-box;
     display: inline-block;

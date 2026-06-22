@@ -19,6 +19,23 @@ services:
     ports:
       - ${MONGO_PORT:-27017}:${MONGO_PORT:-27017}
 
+  vulnogram-redis:
+    image: redis:7-alpine
+    restart: always
+    command: >
+      redis-server
+      --maxmemory ${REDIS_MAXMEMORY:-256mb}
+      --maxmemory-policy ${REDIS_MAXMEMORY_POLICY:-allkeys-lru}
+      --save 60 1
+    volumes:
+      - vulnogram-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
   vulnogram:
     build: .
     image: vulnogram/vulnogram:latest
@@ -37,7 +54,10 @@ services:
     depends_on:
       vulnogram-mongo:
         condition: service_healthy
+      vulnogram-redis:
+        condition: service_healthy
 
 volumes:
   vulnogram-mongo-data:
   vulnogram-files:
+  vulnogram-redis-data:

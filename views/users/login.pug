@@ -13,5 +13,9 @@ block content
     .pad
       label.lbl(style="width:6em;") Password:
       input.bor.txt(name='password', type='password', autocomplete='current-password')
-    .pad.center 
+    .pad.center
       input.bor.fbn.sfe(type='submit', value='Login')
+  if oidcEnabled
+    .pad.center
+      hr
+      a.bor.fbn.sfe(href='/users/auth/oidc')= oidcLabel

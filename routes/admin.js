@@ -4,8 +4,7 @@
 
 const express = require('express');
 const router = express.Router();
-const csurf = require('csurf');
-const csrfProtection = csurf();
+const csrfProtection = require('../lib/csrf');
 
 const rbac = require('../lib/rbac');
 const Role = require('../models/role');

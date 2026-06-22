@@ -91,6 +91,8 @@ mixin hyperVal(obj, name)
                 if value
                     - var teamLabel = (typeof teamNames !== 'undefined' && teamNames && teamNames[value]) ? teamNames[value] : value
                     span.tag.rnd.vgi-user(title="Owning team: " + value)= teamLabel
+                else
+                    span.lbl(style="opacity:.55", title="No owning team") Unassigned
             default
                 if fields && fields[name]
                     - var cls = fields[name].class ? fields[name].class : '';
